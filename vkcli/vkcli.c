@@ -143,20 +143,20 @@ int main(int argc, char *argv[])
 			i++;
 			str = argv[i];
 			barno = strtoul(str, NULL, 10);
-			fprintf("errno=0x%x\n", errno);
-			fprintf("barno=%l\n", barno);
+			fprintf(stdout, "errno=0x%x\n", errno);
+			fprintf(stdout, "barno=%lx\n", barno);
 
 			i++;
 			str = argv[i];
 			offset = strtoul(str, NULL, 10);
-			fprintf("errno=0x%x\n", errno);
-			fprintf("offset=%llx\n", offset);
+			fprintf(stdout, "errno=0x%x\n", errno);
+			fprintf(stdout, "offset=%llx\n", offset);
 
 			i++;
 			str = argv[i];
 			data[0] = strtoul(str, NULL, 10);
-			fprintf("errno=0x%x\n", errno);
-			fprintf("data=%l\n", data);
+			fprintf(stdout, "errno=0x%x\n", errno);
+			fprintf(stdout, "data=%x\n", data[0]);
 
 			access.barno = barno;
 			access.type = VK_ACCESS_WRITE;
@@ -190,14 +190,14 @@ int main(int argc, char *argv[])
 			i++;
 			str = argv[i];
 			barno = strtoul(str, NULL, 10);
-			fprintf("errno=0x%x\n", errno);
-			fprintf("barno=%l\n", barno);
+			fprintf(stdout, "errno=0x%x\n", errno);
+			fprintf(stdout, "barno=%lx\n", barno);
 
 			i++;
 			str = argv[i];
 			offset = strtoul(str, NULL, 10);
-			fprintf("errno=0x%x\n", errno);
-			fprintf("offset=%llx\n", offset);
+			fprintf(stdout, "errno=0x%x\n", errno);
+			fprintf(stdout, "offset=%llx\n", offset);
 
 			access.barno = barno;
 			access.type = VK_ACCESS_READ;
