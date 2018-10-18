@@ -51,6 +51,9 @@
 
 #include "bcm_vk.h"
 
+/* local macros */
+#define _STR_BASE(_str)     (_str[1] == 'x' ? 16 : 10)
+
 int main(int argc, char *argv[])
 {
 	char *devnode;
@@ -148,13 +151,13 @@ int main(int argc, char *argv[])
 
 			i++;
 			str = argv[i];
-			offset = strtoul(str, NULL, 10);
+			offset = strtoul(str, NULL, _STR_BASE(str));
 			fprintf(stdout, "errno=0x%x\n", errno);
 			fprintf(stdout, "offset=%llx\n", offset);
 
 			i++;
 			str = argv[i];
-			data[0] = strtoul(str, NULL, 10);
+			data[0] = strtoul(str, NULL, _STR_BASE(str));
 			fprintf(stdout, "errno=0x%x\n", errno);
 			fprintf(stdout, "data=%x\n", data[0]);
 
@@ -195,7 +198,7 @@ int main(int argc, char *argv[])
 
 			i++;
 			str = argv[i];
-			offset = strtoul(str, NULL, 10);
+			offset = strtoul(str, NULL, _STR_BASE(str));
 			fprintf(stdout, "errno=0x%x\n", errno);
 			fprintf(stdout, "offset=%llx\n", offset);
 
