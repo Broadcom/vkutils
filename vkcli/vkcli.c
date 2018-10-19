@@ -114,7 +114,9 @@ int main(int argc, char *argv[])
 			char *filename2 = "vk-boot2.bin";
 
 			image.type = VK_IMAGE_TYPE_BOOT1;
-			image.filename = filename1;
+			strncpy(image.filename,
+				filename1,
+				sizeof(image.filename));
 
 			fprintf(stdout, "Load image\n");
 			fflush(stdout);
@@ -125,7 +127,9 @@ int main(int argc, char *argv[])
 			}
 
 			image.type = VK_IMAGE_TYPE_BOOT2;
-			image.filename = filename2;
+			strncpy(image.filename,
+				filename2,
+				sizeof(image.filename));
 
 			rc = ioctl(fd, VK_IOCTL_LOAD_IMAGE, &image);
 			if (rc < 0) {
