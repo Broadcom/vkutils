@@ -52,7 +52,10 @@
 #include "bcm_vk.h"
 
 /* local macros */
-#define _STR_BASE(_str)     (_str[1] == 'x' ? 16 : 10)
+#define _STR_BASE(_str)	(_str[1] == 'x' ? 16 : 10)
+
+#define FNAME_LEN	128
+#define MAX_FILESIZE	0x4000000	/* 64MB */
 
 int main(int argc, char *argv[])
 {
@@ -67,7 +70,9 @@ int main(int argc, char *argv[])
 		printf("  gm - get metadata\n");
 		printf("  li - load image\n");
 		printf("  rb - read bar <barno> <offset>\n");
+		printf("  rf - read to file <barno> <offset> <len> file\n");
 		printf("  wb - write bar <barno> <offset> <value>\n");
+		printf("  wf - write from file <barno> <offset> file\n");
 		printf("  reset - reset\n");
 		return 0;
 	}
@@ -150,19 +155,31 @@ int main(int argc, char *argv[])
 			i++;
 			str = argv[i];
 			barno = strtoul(str, NULL, 10);
-			fprintf(stdout, "errno=0x%x\n", errno);
+			if (errno != 0) {
+				fprintf(stdout, "invalid barno, errno=0x%x\n",
+					errno);
+				goto exit;
+			}
 			fprintf(stdout, "barno=%lx\n", barno);
 
 			i++;
 			str = argv[i];
 			offset = strtoul(str, NULL, _STR_BASE(str));
-			fprintf(stdout, "errno=0x%x\n", errno);
+			if (errno != 0) {
+				fprintf(stdout, "invalid offset, errno=0x%x\n",
+					errno);
+				goto exit;
+			}
 			fprintf(stdout, "offset=%llx\n", offset);
 
 			i++;
 			str = argv[i];
 			data[0] = strtoul(str, NULL, _STR_BASE(str));
-			fprintf(stdout, "errno=0x%x\n", errno);
+			if (errno != 0) {
+				fprintf(stdout, "invalid value, errno=0x%x\n",
+					errno);
+				goto exit;
+			}
 			fprintf(stdout, "data=%x\n", data[0]);
 
 			access.barno = barno;
@@ -188,6 +205,102 @@ int main(int argc, char *argv[])
 			continue;
 		}
 
+		if (!strcmp(str, "wf")) {
+			struct vk_access access;
+			char fname[FNAME_LEN];
+			FILE *pfile;
+			long fsize;
+			char *buffer;
+			unsigned long int barno;
+			unsigned long long int offset;
+
+			i++;
+			str = argv[i];
+			barno = strtoul(str, NULL, 10);
+			if (errno != 0) {
+				fprintf(stdout, "Invalid barno, errno=0x%x\n",
+					errno);
+				goto exit;
+			}
+			fprintf(stdout, "barno=%lx\n", barno);
+
+			i++;
+			str = argv[i];
+			offset = strtoul(str, NULL, _STR_BASE(str));
+			if (errno != 0) {
+				fprintf(stdout, "Invalid offset, errno=0x%x\n",
+					errno);
+				goto exit;
+			}
+			fprintf(stdout, "offset=%llx\n", offset);
+
+			i++;
+			str = argv[i];
+			strncpy(fname, str, sizeof(fname));
+			fname[FNAME_LEN - 1] = '\0';
+			fprintf(stdout, "fname=%s\n", fname);
+
+			pfile = fopen(fname, "r");
+			if (pfile == NULL) {
+				perror("file open failed\n");
+				fflush(stderr);
+				goto exit;
+			}
+
+			/* obtain file size */
+			fseek(pfile, 0, SEEK_END);
+			fsize = ftell(pfile);
+			rewind(pfile);
+			fprintf(stdout, "file size=%ld\n", fsize);
+			if (fsize <= 0 || fsize > MAX_FILESIZE) {
+				fprintf(stdout, "Invalid file size (%ld)\n",
+					fsize);
+				fclose(pfile);
+				goto exit;
+			}
+
+			/* allocation buffer to contain all file */
+			buffer = (char *)malloc(fsize);
+			if (buffer == NULL) {
+				perror("buffer allocation failed\n");
+				fclose(pfile);
+				fflush(stderr);
+				goto exit;
+			}
+
+			/* copy file into the buffer */
+			rc = fread(buffer, 1, fsize, pfile);
+			if (rc != fsize) {
+				perror("Fail to read buffer from file\n");
+				fflush(stderr);
+				fclose(pfile);
+				free(buffer);
+				goto exit;
+			}
+
+			access.barno = barno;
+			access.type = VK_ACCESS_WRITE;
+			access.len = sizeof(char)*fsize;
+			access.offset = offset;
+			access.data = (__u32 *)buffer;
+
+			fprintf(stdout, "Write File to Bar\n");
+			fflush(stdout);
+
+			rc = ioctl(fd, VK_IOCTL_ACCESS_BAR, &access);
+			if (rc < 0) {
+				perror("ioctl failed!");
+				fflush(stderr);
+			}
+
+			fprintf(stdout, "    access bar done\n");
+			fflush(stdout);
+
+			fclose(pfile);
+			free(buffer);
+			continue;
+		}
+
 		if (!strcmp(str, "rb")) {
 			struct vk_access access;
 			__u32 data[1];
@@ -197,13 +310,21 @@ int main(int argc, char *argv[])
 			i++;
 			str = argv[i];
 			barno = strtoul(str, NULL, 10);
-			fprintf(stdout, "errno=0x%x\n", errno);
+			if (errno != 0) {
+				fprintf(stdout, "Invalid barno, errno=0x%x\n",
+					errno);
+				goto exit;
+			}
 			fprintf(stdout, "barno=%lx\n", barno);
 
 			i++;
 			str = argv[i];
 			offset = strtoul(str, NULL, _STR_BASE(str));
-			fprintf(stdout, "errno=0x%x\n", errno);
+			if (errno != 0) {
+				fprintf(stdout, "Invalid offset, errno=0x%x\n",
+					errno);
+				goto exit;
+			}
 			fprintf(stdout, "offset=%llx\n", offset);
 
 			access.barno = barno;
@@ -226,6 +347,106 @@ int main(int argc, char *argv[])
 
 			fprintf(stdout, "    access bar done\n");
 			fflush(stdout);
+			continue;
+		}
+
+		if (!strcmp(str, "rf")) {
+			struct vk_access access;
+			char fname[FNAME_LEN];
+			FILE *pfile;
+			long fsize;
+			char *buffer;
+			unsigned long int barno;
+			unsigned long long int offset;
+
+			i++;
+			str = argv[i];
+			barno = strtoul(str, NULL, 10);
+			if (errno != 0) {
+				fprintf(stdout, "Invalid barno, errno=0x%x\n",
+					errno);
+				goto exit;
+			}
+			fprintf(stdout, "barno=%lx\n", barno);
+
+			i++;
+			str = argv[i];
+			offset = strtoul(str, NULL, _STR_BASE(str));
+			if (errno != 0) {
+				fprintf(stdout, "Invalid offset, errno=0x%x\n",
+					errno);
+				goto exit;
+			}
+			fprintf(stdout, "offset=%llx\n", offset);
+
+			i++;
+			str = argv[i];
+			fsize = strtoul(str, NULL, _STR_BASE(str));
+			if (errno != 0) {
+				fprintf(stdout,
+					"Invalid file size, errno=0x%x\n",
+					errno);
+				goto exit;
+			}
+			if (fsize <= 0 || fsize > MAX_FILESIZE) {
+				fprintf(stdout, "Invalid file size (%ld)\n",
+					fsize);
+				goto exit;
+			}
+			fprintf(stdout, "fsize=%lx\n", fsize);
+
+			i++;
+			str = argv[i];
+			strncpy(fname, str, sizeof(fname));
+			fname[FNAME_LEN - 1] = '\0';
+			fprintf(stdout, "fname=%s\n", fname);
+
+			pfile = fopen(fname, "w");
+			if (pfile == NULL) {
+				perror("file open failed\n");
+				fflush(stderr);
+				goto exit;
+			}
+
+			/* allocation buffer to contain all file */
+			buffer = (char *)malloc(fsize);
+			if (buffer == NULL) {
+				perror("buffer allocation failed\n");
+				fflush(stderr);
+				fclose(pfile);
+				goto exit;
+			}
+
+			memset(buffer, 0, fsize);
+
+			access.barno = barno;
+			access.type = VK_ACCESS_READ;
+			access.len = sizeof(char) * fsize;
+			access.offset = offset;
+			access.data = (__u32 *)buffer;
+
+			fprintf(stdout, "Read Bar\n");
+			fflush(stdout);
+
+			rc = ioctl(fd, VK_IOCTL_ACCESS_BAR, &access);
+			if (rc < 0) {
+				perror("ioctl failed!");
+				fflush(stderr);
+			}
+
+			fprintf(stdout, "    access bar done\n");
+			fflush(stdout);
+
+			/* copy buffer into file */
+			rc = fwrite(buffer, 1, fsize, pfile);
+			if (rc != fsize) {
+				perror("Fail to write buffer to file\n");
+				fflush(stderr);
+			}
+
+			fclose(pfile);
+			free(buffer);
+
 			continue;
 		}
 
@@ -252,6 +473,7 @@ int main(int argc, char *argv[])
 		exit(-1);
 	}
 
+exit:
 	fprintf(stdout, "Close\n");
 	fflush(stdout);
 	rc = close(fd);
