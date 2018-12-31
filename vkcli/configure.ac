@@ -2,13 +2,16 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_INIT([vkcli], [1.0])
+AC_LANG_WERROR
 AM_INIT_AUTOMAKE([-Wall -Werror subdir-objects foreign])
 
 # Checks for programs.
+AM_PROG_AR
 AC_PROG_CC
 AC_PROG_INSTALL
 AC_PROG_MAKE_SET
-AM_CFLAGS
+AM_CFLAGS="-Wall -Werror"
+AC_SUBST([AM_CFLAGS])
 # Checks for libraries.
 
 # Set shared libraries
@@ -17,7 +20,6 @@ AM_CFLAGS
 # Checks for typedefs, structures, and compiler characteristics.
 
 # Checks for library functions.
-
 
 AC_CONFIG_FILES([Makefile])
 AC_OUTPUT
