@@ -68,7 +68,7 @@ int main(int argc, char *argv[])
 		printf("Usage: %s /dev/bcm-vk.N <args...>\n", argv[0]);
 		printf("Available arguments:\n");
 		printf("  gm - get metadata\n");
-		printf("  li - load image\n");
+		printf("  li - load image [boot1 fname] [boot2 fname]\n");
 		printf("  rb - read bar <barno> <offset>\n");
 		printf("  rf - read to file <barno> <offset> <len> file\n");
 		printf("  wb - write bar <barno> <offset> <value>\n");
@@ -115,8 +115,26 @@ int main(int argc, char *argv[])
 
 		if (!strcmp(str, "li")) {
 			struct vk_image image;
-			char *filename1 = "vk-boot1.bin";
-			char *filename2 = "vk-boot2.bin";
+			char filename1[FNAME_LEN] = "vk-boot1.bin";
+			char filename2[FNAME_LEN] = "vk-boot2.bin";
+
+			if (argc >= 4) {
+				/* boot1 file name defined */
+				i++;
+				str = argv[i];
+				strncpy(filename1, str, sizeof(filename1));
+				filename1[FNAME_LEN - 1] = '\0';
+			}
+			if (argc >= 5) {
+				/* boot2 file name defined */
+				i++;
+				str = argv[i];
+				strncpy(filename2, str, sizeof(filename2));
+				filename2[FNAME_LEN - 1] = '\0';
+			}
+
+			fprintf(stdout, "boot1 image=%s\n", filename1);
+			fprintf(stdout, "boot2 image=%s\n", filename2);
 
 			image.type = VK_IMAGE_TYPE_BOOT1;
 			strncpy(image.filename,
