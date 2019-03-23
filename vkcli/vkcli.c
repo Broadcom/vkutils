@@ -55,6 +55,7 @@
 #define _STR_BASE(_str)	(_str[1] == 'x' ? 16 : 10)
 
 #define FNAME_LEN	128
+#define OPTION_LEN	8
 #define MAX_FILESIZE	0x4000000	/* 64MB */
 
 int main(int argc, char *argv[])
@@ -68,7 +69,10 @@ int main(int argc, char *argv[])
 		printf("Usage: %s /dev/bcm-vk.N <args...>\n", argv[0]);
 		printf("Available arguments:\n");
 		printf("  gm - get metadata\n");
-		printf("  li - load image [boot1 fname] [boot2 fname]\n");
+		printf("  li - load image [-/boot1/boot2] [fname1] [fname2]\n");
+		printf("     '-' -- load both stages (both boot1 and boot2)\n");
+		printf("     'boot1' -- only first stage (boot1)\n");
+		printf("     'boot2' -- only second stage (boot2)\n");
 		printf("  rb - read bar <barno> <offset>\n");
 		printf("  rf - read to file <barno> <offset> <len> file\n");
 		printf("  wb - write bar <barno> <offset> <value>\n");
@@ -115,49 +119,78 @@ int main(int argc, char *argv[])
 
 		if (!strcmp(str, "li")) {
 			struct vk_image image;
+			char method[OPTION_LEN] = "-";
 			char filename1[FNAME_LEN] = "vk-boot1.bin";
 			char filename2[FNAME_LEN] = "vk-boot2.bin";
 
 			if (argc >= 4) {
-				/* boot1 file name defined */
+				/* method */
+				i++;
+				str = argv[i];
+				strncpy(method, str, sizeof(method));
+				method[OPTION_LEN - 1] = '\0';
+				fprintf(stdout, "method=%s\n", method);
+			}
+			if (argc >= 5) {
+				/* file name 1 defined */
 				i++;
 				str = argv[i];
 				strncpy(filename1, str, sizeof(filename1));
 				filename1[FNAME_LEN - 1] = '\0';
+				fprintf(stdout, "file name 1=%s\n", filename1);
 			}
-			if (argc >= 5) {
-				/* boot2 file name defined */
+			if (argc >= 6) {
+				/* file name 2 defined */
 				i++;
 				str = argv[i];
 				strncpy(filename2, str, sizeof(filename2));
 				filename2[FNAME_LEN - 1] = '\0';
+				fprintf(stdout, "file name 2=%s\n", filename2);
 			}
 
-			fprintf(stdout, "boot1 image=%s\n", filename1);
-			fprintf(stdout, "boot2 image=%s\n", filename2);
-
-			image.type = VK_IMAGE_TYPE_BOOT1;
-			strncpy(image.filename,
-				filename1,
-				sizeof(image.filename));
-
-			fprintf(stdout, "Load image\n");
-			fflush(stdout);
-			rc = ioctl(fd, VK_IOCTL_LOAD_IMAGE, &image);
-			if (rc < 0) {
-				perror("ioctl failed!");
-				fflush(stderr);
+			if (!strcmp(method, "boot1")) {
+				filename2[0] = '\0';
+			} else if (!strcmp(method, "boot2")) {
+				/* If user specified file name,
+				 * the 1st filename will be used for boot2
+				 */
+				if (!strcmp(filename1, "vk-boot1.bin"))
+					strcpy(filename2, "vk-boot2.bin");
+				else
+					strcpy(filename2, filename1);
+				filename1[0] = '\0';
 			}
 
-			image.type = VK_IMAGE_TYPE_BOOT2;
-			strncpy(image.filename,
-				filename2,
-				sizeof(image.filename));
+			if (strcmp(filename1, "")) {
+				image.type = VK_IMAGE_TYPE_BOOT1;
+				strncpy(image.filename,
+					filename1,
+					sizeof(image.filename));
 
-			rc = ioctl(fd, VK_IOCTL_LOAD_IMAGE, &image);
-			if (rc < 0) {
-				perror("ioctl failed!");
-				fflush(stderr);
+				fprintf(stdout, "Load image boot1 %s\n",
+					filename1);
+				fflush(stdout);
+				rc = ioctl(fd, VK_IOCTL_LOAD_IMAGE, &image);
+				if (rc < 0) {
+					perror("ioctl failed!");
+					fflush(stderr);
+				}
+			}
+
+			if (strcmp(filename2, "")) {
+				image.type = VK_IMAGE_TYPE_BOOT2;
+				strncpy(image.filename,
+					filename2,
+					sizeof(image.filename));
+
+				fprintf(stdout, "Load image boot2 %s\n",
+					filename2);
+				fflush(stdout);
+				rc = ioctl(fd, VK_IOCTL_LOAD_IMAGE, &image);
+				if (rc < 0) {
+					perror("ioctl failed!");
+					fflush(stderr);
+				}
 			}
 
 			fflush(stdout);
