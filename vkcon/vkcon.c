@@ -74,8 +74,8 @@
 /* cmd buffer is 128 bytes, with 1 byte as header/control */
 #define VCON_MAX_CMD_SIZE        127
 
-/* TO_FIX: this is only experimental value, would need to be changed */
-#define VCON_BUF_BAR2_OFF        0x40000
+/* default value, could be overwritten by user */
+#define VCON_BUF_BAR2_OFF        0x3800000
 
 #define VCON_IN_CMD_POLL_US      (100 * 1000) /* 100ms */
 #define VCON_IN_CMD_POLL_MAX     10 /* max polls before timeout */
@@ -134,6 +134,11 @@ static void *output_thread(void *arg)
 	spool_buf = ((char *)log + log->spool_off);
 
 	while (out_thread_running) {
+		/* check marker for PCIe going down */
+		if (log->marker != VCON_MARKER) {
+			_PR_LINE("Possibly PCIe going down, exit...\n");
+			break;
+		}
 
 		if (rd_idx != log->spool_idx) {
 			p_buf = &spool_buf[rd_idx * entry_len];
@@ -219,6 +224,12 @@ static void vcon_in_cmd_loop(logger_buf *p_log_buf)
 		if (strcmp(p_char, "quit") == 0)
 			break;
 
+		/* check marker for PCIe going down */
+		if (p_log_buf->marker != VCON_MARKER) {
+			_PR_LINE("Possibly PCIe going down, exit...\n");
+			break;
+		}
+
 		/* send command down */
 		ret = vcon_send_cmd(p_cmd, p_char);
 		if (ret) {
@@ -242,6 +253,7 @@ int main(int argc, char **argv)
 	bool input_enable = false;
 	bool output_enable = false;
 	uint32_t mmap_size = VCON_DEF_MMAP_SIZE;
+	uint32_t bar2_off = VCON_BUF_BAR2_OFF;
 	logger_buf *p_log_buf;
 	pthread_attr_t attr;
 	char *p_cmd;
@@ -251,6 +263,7 @@ int main(int argc, char **argv)
 	static struct option long_options[] = {
 		{"dev", required_argument, 0, 'd'},
 		{"in", no_argument, 0, 'i'},
+		{"loc", required_argument, 0, 'l'},
 		{"out", no_argument, 0, 'o'},
 		{"size", required_argument, 0, 's'},
 		{0, 0, 0, 0}
@@ -258,7 +271,7 @@ int main(int argc, char **argv)
 
 	memset(dev_name, 0, sizeof(dev_name));
 
-	while ((c = getopt_long(argc, argv, "d:i:o:s:",
+	while ((c = getopt_long(argc, argv, "d:i:l:o:s:",
 				long_options, &option_index)) != -1) {
 		switch (c) {
 		case 'd':
@@ -267,6 +280,9 @@ int main(int argc, char **argv)
 		case 'i':
 			if (strcmp(VCON_ENABLE, optarg) == 0)
 				input_enable = true;
+			break;
+		case 'l':
+			bar2_off = strtoul(optarg, NULL, 0);
 			break;
 		case 'o':
 			if (strcmp(VCON_ENABLE, optarg) == 0)
@@ -302,11 +318,12 @@ int main(int argc, char **argv)
 
 	/* do mmap & map it to our struct */
 	p_log_buf = mmap(0, mmap_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd,
-			 VCON_BUF_BAR2_OFF);
-	if (!p_log_buf || (p_log_buf->marker != VCON_MARKER)) {
-		_PR_LINE("Error mmap size 0x%x from dev %s, marker 0x%x\n",
+			 bar2_off);
+	if ((p_log_buf == MAP_FAILED) || (p_log_buf->marker != VCON_MARKER)) {
+		_PR_LINE("Error mmap size 0x%x from dev %s,%s marker 0x%x\n",
 			 mmap_size, dev_name,
-			 p_log_buf ? p_log_buf->marker : 0);
+			 (p_log_buf == MAP_FAILED) ? "failed mmap" : "",
+			 (p_log_buf == MAP_FAILED) ? 0 : p_log_buf->marker);
 		return -ENOMEM;
 	}
 
@@ -357,6 +374,9 @@ int main(int argc, char **argv)
 		pthread_join(output, NULL);
 
 	}
+
+	/* do an unmmap */
+	munmap(p_log_buf, mmap_size);
 
 free_and_exit:
 	return ret;
