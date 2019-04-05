@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * Copyright 20XX Broadcom.
+ * Copyright 2019 Broadcom.
  */
 #include <elf.h>
 #include <err.h>
