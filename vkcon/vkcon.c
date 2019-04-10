@@ -92,6 +92,9 @@ static pthread_mutex_t log_mutex = PTHREAD_MUTEX_INITIALIZER;
 	pthread_mutex_unlock(&log_mutex);  \
 }
 
+#define MAX_MMAP_SIZE            (2 * 1024 * 1024)
+#define VKCON_RNDUP(_x, _s)      (((_x) + (_s) - 1) & ~((_s) - 1))
+
 /**
  * interface structure, and this has to match the VK side definition.
  * we only care about the spooled part.
@@ -254,7 +257,7 @@ int main(int argc, char **argv)
 	bool output_enable = false;
 	uint32_t mmap_size = VCON_DEF_MMAP_SIZE;
 	uint32_t bar2_off = VCON_BUF_BAR2_OFF;
-	logger_buf *p_log_buf;
+	logger_buf *p_log_buf = NULL;
 	pthread_attr_t attr;
 	char *p_cmd;
 	pthread_t output;
@@ -316,22 +319,42 @@ int main(int argc, char **argv)
 		return fd;
 	}
 
-	/* do mmap & map it to our struct */
-	p_log_buf = mmap(0, mmap_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd,
-			 bar2_off);
-	if ((p_log_buf == MAP_FAILED) || (p_log_buf->marker != VCON_MARKER)) {
-		_PR_LINE("Error mmap size 0x%x from dev %s,%s marker 0x%x\n",
-			 mmap_size, dev_name,
-			 (p_log_buf == MAP_FAILED) ? "failed mmap" : "",
-			 (p_log_buf == MAP_FAILED) ? 0 : p_log_buf->marker);
-		return -ENOMEM;
-	}
+	while (p_log_buf == NULL) {
 
-	/* Do some calculation and see if the mmap region is big enough */
-	if (p_log_buf->cmd_off + VCON_MAX_CMD_SIZE > mmap_size) {
-		_PR_LINE("Region indicated 0x%x greater than mmap size 0x%x\n",
-			 p_log_buf->cmd_off + VCON_MAX_CMD_SIZE, mmap_size);
-		return -ENOMEM;
+		uint32_t req_size;
+
+		/* do mmap & map it to our struct */
+		p_log_buf = mmap(0, mmap_size, PROT_READ | PROT_WRITE,
+				 MAP_SHARED, fd, bar2_off);
+		if ((p_log_buf == MAP_FAILED)
+		    || (p_log_buf->marker != VCON_MARKER)) {
+			_PR_LINE(
+			    "Error mmap size 0x%x from dev %s,%s marker 0x%x\n",
+			    mmap_size, dev_name,
+			    (p_log_buf == MAP_FAILED) ? "failed mmap" : "",
+			    (p_log_buf == MAP_FAILED) ? 0 : p_log_buf->marker);
+			return -ENOMEM;
+		}
+
+		/*
+		 * Do some calculation and see if the mmap region is big enough.
+		 * If not, remmap based on new size
+		 */
+		req_size = p_log_buf->cmd_off + VCON_MAX_CMD_SIZE;
+		if (req_size > mmap_size) {
+
+			_PR_LINE(
+			  "Region indicated 0x%x greater than mmap size 0x%x\n",
+			  req_size, mmap_size);
+
+			munmap(p_log_buf, mmap_size);
+			mmap_size = VKCON_RNDUP(req_size, 0x1000);
+			p_log_buf = NULL;
+
+			_PR_LINE("Remap region to size 0x%x\n", mmap_size);
+			if (mmap_size > MAX_MMAP_SIZE)
+				return -ENOMEM;
+		}
 	}
 
 	/* send down an enable cmd anyway */
