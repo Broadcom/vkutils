@@ -103,6 +103,7 @@ int main(int argc, char *argv[])
 			if (rc < 0) {
 				perror("ioctl failed!");
 				fflush(stderr);
+				exit(rc);
 			}
 
 			fprintf(stdout, "Metadata version: 0x%x\n",
@@ -174,6 +175,7 @@ int main(int argc, char *argv[])
 				if (rc < 0) {
 					perror("ioctl failed!");
 					fflush(stderr);
+					exit(rc);
 				}
 			}
 
@@ -190,6 +192,7 @@ int main(int argc, char *argv[])
 				if (rc < 0) {
 					perror("ioctl failed!");
 					fflush(stderr);
+					exit(rc);
 				}
 			}
 
@@ -209,7 +212,7 @@ int main(int argc, char *argv[])
 			if (errno != 0) {
 				fprintf(stdout, "invalid barno, errno=0x%x\n",
 					errno);
-				goto exit;
+				exit(errno);
 			}
 			fprintf(stdout, "barno=%lx\n", barno);
 
@@ -219,7 +222,7 @@ int main(int argc, char *argv[])
 			if (errno != 0) {
 				fprintf(stdout, "invalid offset, errno=0x%x\n",
 					errno);
-				goto exit;
+				exit(errno);
 			}
 			fprintf(stdout, "offset=%llx\n", offset);
 
@@ -229,7 +232,7 @@ int main(int argc, char *argv[])
 			if (errno != 0) {
 				fprintf(stdout, "invalid value, errno=0x%x\n",
 					errno);
-				goto exit;
+				exit(errno);
 			}
 			fprintf(stdout, "data=%x\n", data[0]);
 
@@ -246,6 +249,7 @@ int main(int argc, char *argv[])
 			if (rc < 0) {
 				perror("ioctl failed!");
 				fflush(stderr);
+				exit(rc);
 			}
 
 			fprintf(stdout, "0x%x\n", data[0]);
@@ -271,7 +275,7 @@ int main(int argc, char *argv[])
 			if (errno != 0) {
 				fprintf(stdout, "Invalid barno, errno=0x%x\n",
 					errno);
-				goto exit;
+				exit(errno);
 			}
 			fprintf(stdout, "barno=%lx\n", barno);
 
@@ -281,7 +285,7 @@ int main(int argc, char *argv[])
 			if (errno != 0) {
 				fprintf(stdout, "Invalid offset, errno=0x%x\n",
 					errno);
-				goto exit;
+				exit(errno);
 			}
 			fprintf(stdout, "offset=%llx\n", offset);
 
@@ -295,7 +299,7 @@ int main(int argc, char *argv[])
 			if (pfile == NULL) {
 				perror("file open failed\n");
 				fflush(stderr);
-				goto exit;
+				exit(-1);
 			}
 
 			/* obtain file size */
@@ -307,7 +311,7 @@ int main(int argc, char *argv[])
 				fprintf(stdout, "Invalid file size (%ld)\n",
 					fsize);
 				fclose(pfile);
-				goto exit;
+				exit(-1);
 			}
 
 			/* allocation buffer to contain all file */
@@ -316,7 +320,7 @@ int main(int argc, char *argv[])
 				perror("buffer allocation failed\n");
 				fclose(pfile);
 				fflush(stderr);
-				goto exit;
+				exit(-1);
 			}
 
 			/* copy file into the buffer */
@@ -326,7 +330,7 @@ int main(int argc, char *argv[])
 				fflush(stderr);
 				fclose(pfile);
 				free(buffer);
-				goto exit;
+				exit(-1);
 			}
 
 			access.barno = barno;
@@ -342,6 +346,7 @@ int main(int argc, char *argv[])
 			if (rc < 0) {
 				perror("ioctl failed!");
 				fflush(stderr);
+				exit(rc);
 			}
 
 			fprintf(stdout, "    access bar done\n");
@@ -364,7 +369,7 @@ int main(int argc, char *argv[])
 			if (errno != 0) {
 				fprintf(stdout, "Invalid barno, errno=0x%x\n",
 					errno);
-				goto exit;
+				exit(rc);
 			}
 			fprintf(stdout, "barno=%lx\n", barno);
 
@@ -374,7 +379,7 @@ int main(int argc, char *argv[])
 			if (errno != 0) {
 				fprintf(stdout, "Invalid offset, errno=0x%x\n",
 					errno);
-				goto exit;
+				exit(rc);
 			}
 			fprintf(stdout, "offset=%llx\n", offset);
 
@@ -391,6 +396,7 @@ int main(int argc, char *argv[])
 			if (rc < 0) {
 				perror("ioctl failed!");
 				fflush(stderr);
+				exit(rc);
 			}
 
 			fprintf(stdout, "0x%x\n", data[0]);
@@ -416,7 +422,7 @@ int main(int argc, char *argv[])
 			if (errno != 0) {
 				fprintf(stdout, "Invalid barno, errno=0x%x\n",
 					errno);
-				goto exit;
+				exit(errno);
 			}
 			fprintf(stdout, "barno=%lx\n", barno);
 
@@ -426,7 +432,7 @@ int main(int argc, char *argv[])
 			if (errno != 0) {
 				fprintf(stdout, "Invalid offset, errno=0x%x\n",
 					errno);
-				goto exit;
+				exit(errno);
 			}
 			fprintf(stdout, "offset=%llx\n", offset);
 
@@ -437,12 +443,12 @@ int main(int argc, char *argv[])
 				fprintf(stdout,
 					"Invalid file size, errno=0x%x\n",
 					errno);
-				goto exit;
+				exit(errno);
 			}
 			if (fsize <= 0 || fsize > MAX_FILESIZE) {
 				fprintf(stdout, "Invalid file size (%ld)\n",
 					fsize);
-				goto exit;
+				exit(-1);
 			}
 			fprintf(stdout, "fsize=%lx\n", fsize);
 
@@ -456,7 +462,7 @@ int main(int argc, char *argv[])
 			if (pfile == NULL) {
 				perror("file open failed\n");
 				fflush(stderr);
-				goto exit;
+				exit(-1);
 			}
 
 			/* allocation buffer to contain all file */
@@ -465,7 +471,7 @@ int main(int argc, char *argv[])
 				perror("buffer allocation failed\n");
 				fflush(stderr);
 				fclose(pfile);
-				goto exit;
+				exit(-1);
 			}
 
 			memset(buffer, 0, fsize);
@@ -483,6 +489,7 @@ int main(int argc, char *argv[])
 			if (rc < 0) {
 				perror("ioctl failed!");
 				fflush(stderr);
+				exit(rc);
 			}
 
 			fprintf(stdout, "    access bar done\n");
@@ -493,6 +500,7 @@ int main(int argc, char *argv[])
 			if (rc != fsize) {
 				perror("Fail to write buffer to file\n");
 				fflush(stderr);
+				exit(rc);
 			}
 
 			fclose(pfile);
@@ -513,6 +521,7 @@ int main(int argc, char *argv[])
 			if (rc < 0) {
 				perror("ioctl failed!");
 				fflush(stderr);
+				exit(rc);
 			}
 			fprintf(stdout, "    reset done\n");
 			fflush(stdout);
@@ -524,7 +533,6 @@ int main(int argc, char *argv[])
 		exit(-1);
 	}
 
-exit:
 	fprintf(stdout, "Close\n");
 	fflush(stdout);
 	rc = close(fd);
