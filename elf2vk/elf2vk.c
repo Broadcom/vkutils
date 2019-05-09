@@ -6,6 +6,7 @@
 #include <err.h>
 #include <gelf.h>
 #include <fcntl.h>
+#include <inttypes.h>
 #include <libelf.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -15,15 +16,16 @@
  * Convert elf file to VK binary of load records of form:
  * MAGIC  (U64) - VK Image indicator
  * LENGTH (U64) - Length of remainder of image (including MAGIC at end)
- * ADDR0 (U32)  - Section 0 load address
+ * ADDR0 (U64)  - Section 0 load address
  * SIZE0 (U32)  - Section 0 size
  * DATA0[] (U8) - Section 0 bytes to load
  * ..
  * ..
- * ADDR0 (U32)  - Section N load address
+ * ADDR0 (U64)  - Section N load address
  * SIZE0 (U32)  - Section N size
  * DATA0[] (U8) - Section N bytes to load
  * ENTRY_ADDR (U32) - Entry Address to jump to
+ * SIZE0 (U32)  - Entry size always zero
  * MAGIC (U64) - VK Image Indicator
  */
 
@@ -41,7 +43,7 @@ int main(int argc, char **argv)
 	Elf_Data *data;
 	uint8_t *buf;
 	uint32_t sz;
-	uint32_t addr;
+	uint64_t addr;
 	uint32_t entry_addr;
 	uint64_t magic = MAGIC;
 	uint64_t length;
@@ -118,7 +120,7 @@ int main(int argc, char **argv)
 			size_t shstrndx;
 			char *name;
 
-			printf("ADDR=0x%8.8x SZ=0x%8.8x ", addr, sz);
+			printf("ADDR=0x%016" PRIx64 " SZ=0x%8.8x ", addr, sz);
 
 			if (elf_getshdrstrndx(elf_in, &shstrndx) != 0)
 				errx(EXIT_FAILURE,
@@ -148,6 +150,11 @@ int main(int argc, char **argv)
 		printf("ENTR_ADDR=0x%8.8x\n", entry_addr);
 	fwrite(&entry_addr, sizeof(entry_addr), 1, fd_out);
 	length += sizeof(entry_addr);
+
+	/* Write zero size for entry addr */
+	sz = 0;
+	fwrite(&sz, sizeof(sz), 1, fd_out);
+	length += sizeof(sz);
 
 	/* Write magic at end of file */
 	fwrite(&magic, sizeof(magic), 1, fd_out);
