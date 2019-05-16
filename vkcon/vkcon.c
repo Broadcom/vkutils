@@ -140,7 +140,7 @@ static void *output_thread(void *arg)
 		/* check marker for PCIe going down */
 		if (log->marker != VCON_MARKER) {
 			_PR_LINE("Possibly PCIe going down, exit...\n");
-			break;
+			exit(-EINVAL);
 		}
 
 		if (rd_idx != log->spool_idx) {
