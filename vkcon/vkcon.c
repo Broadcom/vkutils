@@ -51,7 +51,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/ioctl.h>
 #include <sys/mman.h>
+
+#include "bcm_vk.h"
 
 /**
  * @file
@@ -80,6 +83,10 @@
 #define VCON_IN_CMD_POLL_US      (100 * 1000) /* 100ms */
 #define VCON_IN_CMD_POLL_MAX     10 /* max polls before timeout */
 #define VCON_OUT_THREAD_SLEEP_US 1000 /* 1ms */
+
+/* command doorbell notification definitions */
+#define VKCON_CMD_DB_OFFSET      0x49c
+#define VKCON_CMD_DB_VAL         0xFFFFFFF0
 
 static const char *true_false[2] = {"False", "True"};
 static bool out_thread_running;
@@ -160,12 +167,22 @@ static void *output_thread(void *arg)
 
 /**
  * @brief Sending a command to the card through PCIe
+ * @param fd file descriptor of the device
  * @param cmd_p location to the command channel
  * @param cmd command
  */
-static int32_t vcon_send_cmd(char *cmd_p, const char *cmd)
+static int32_t vcon_send_cmd(int fd, char *cmd_p, const char *cmd)
 {
 	uint32_t cnt = 0;
+	static const uint32_t data = VKCON_CMD_DB_VAL;
+	static const struct vk_access io_cmd_notify = {
+		.barno  = 0,
+		.type   = VK_ACCESS_WRITE,
+		.len    = sizeof(uint32_t),
+		.offset = VKCON_CMD_DB_OFFSET,
+		.data   = (uint32_t *)&data,
+	};
+	int rc;
 
 	/* first byte is an indicator */
 	if (*cmd_p != 0) {
@@ -178,6 +195,11 @@ static int32_t vcon_send_cmd(char *cmd_p, const char *cmd)
 	/* cpy the command to the cmd location, and wait for it to be cleared */
 	strncpy(cmd_p + 1, cmd, VCON_MAX_CMD_SIZE);
 	*cmd_p = 1; /* mark it to be valid - press doorbell */
+
+	/* press door bell */
+	rc = ioctl(fd, VK_IOCTL_ACCESS_BAR, &io_cmd_notify);
+	if (rc)
+		return -EFAULT;
 
 	usleep(VCON_IN_CMD_POLL_US);
 
@@ -197,9 +219,10 @@ tx_success:
 
 /**
  * @brief Continue loop for handling input from user
+ * @param fd file descriptor
  * @param p_log_buf pointer to the logger structure
  */
-static void vcon_in_cmd_loop(logger_buf *p_log_buf)
+static void vcon_in_cmd_loop(int fd, logger_buf *p_log_buf)
 {
 	char line[VCON_MAX_CMD_SIZE];
 	char *p_char = line;
@@ -234,7 +257,7 @@ static void vcon_in_cmd_loop(logger_buf *p_log_buf)
 		}
 
 		/* send command down */
-		ret = vcon_send_cmd(p_cmd, p_char);
+		ret = vcon_send_cmd(fd, p_cmd, p_char);
 		if (ret) {
 			_PR_LINE("Send Cmd Failure %s\n, input exits...",
 				 strerror(ret));
@@ -359,7 +382,7 @@ int main(int argc, char **argv)
 
 	/* send down an enable cmd anyway */
 	p_cmd = ((char *)p_log_buf + p_log_buf->cmd_off);
-	ret = vcon_send_cmd(p_cmd, VCON_ENABLE);
+	ret = vcon_send_cmd(fd, p_cmd, VCON_ENABLE);
 	if (ret) {
 		_PR_LINE("Failure to send down enable cmd @start - err %s\n",
 			 strerror(-ret));
@@ -385,7 +408,7 @@ int main(int argc, char **argv)
 	/* drop to busy loop just for input  */
 	if (input_enable) {
 		_PR_LINE("VK Virtual Console Input starts\n");
-		vcon_in_cmd_loop(p_log_buf);
+		vcon_in_cmd_loop(fd, p_log_buf);
 		_PR_LINE("VCON Input Exit...\n");
 	}
 
