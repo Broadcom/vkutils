@@ -164,6 +164,12 @@ int main(int argc, char *argv[])
 
 			if (strcmp(filename1, "")) {
 				image.type = VK_IMAGE_TYPE_BOOT1;
+				if (strlen(filename1)
+				    >= sizeof(image.filename)) {
+					perror("filename1 too long - failed!");
+					fflush(stderr);
+					exit(-1);
+				}
 				strncpy(image.filename,
 					filename1,
 					sizeof(image.filename));
@@ -181,6 +187,12 @@ int main(int argc, char *argv[])
 
 			if (strcmp(filename2, "")) {
 				image.type = VK_IMAGE_TYPE_BOOT2;
+				if (strlen(filename2)
+				    >= sizeof(image.filename)) {
+					perror("filename2 too long - failed!");
+					fflush(stderr);
+					exit(-1);
+				}
 				strncpy(image.filename,
 					filename2,
 					sizeof(image.filename));
