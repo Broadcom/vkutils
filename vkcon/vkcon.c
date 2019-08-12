@@ -301,6 +301,10 @@ int main(int argc, char **argv)
 				long_options, &option_index)) != -1) {
 		switch (c) {
 		case 'd':
+			if (strlen(optarg) >= sizeof(dev_name)) {
+				_PR_LINE("optarg too long for dev_name");
+				return -EINVAL;
+			}
 			strncpy(dev_name, optarg, sizeof(dev_name));
 			break;
 		case 'i':
