@@ -266,16 +266,17 @@ static void vcon_in_cmd_loop(int fd, logger_buf *p_log_buf)
 	} while (ret >= 0);
 }
 
-/**
- * main testing unit entry
- */
+#define DEV_DRV_NAME "/dev/bcm_vk"
+#define DEV_LEGACY_DRV_NAME "/dev/bcm-vk"
+
 int main(int argc, char **argv)
 {
 	int c;
 	int option_index;
 	int32_t ret = -1;
-
 	char dev_name[30];
+	char devnode[50];
+	char *node_num = NULL;
 	bool input_enable = false;
 	bool output_enable = false;
 	uint32_t mmap_size = VCON_DEF_MMAP_SIZE;
@@ -284,7 +285,7 @@ int main(int argc, char **argv)
 	pthread_attr_t attr;
 	char *p_cmd;
 	pthread_t output;
-	int fd;
+	int fd = -1;
 
 	static struct option long_options[] = {
 		{"dev", required_argument, 0, 'd'},
@@ -340,10 +341,41 @@ int main(int argc, char **argv)
 	}
 
 	/* open device */
-	fd = open(dev_name, O_RDWR | O_SYNC);
+	if (strlen(dev_name) > 3) {
+		/* devnode must have been explicitly specified */
+
+		_PR_LINE(" Open, trying devnode %s\n", dev_name);
+		fd = open(dev_name, O_RDWR | O_SYNC);
+
+		if (strstr(dev_name, "/dev/bcm-vk.") == dev_name)
+			node_num = &dev_name[12];
+	} else {
+		node_num = dev_name;
+	}
+
 	if (fd < 0) {
-		_PR_LINE("Error opening device err %d(%s)\n", fd, strerror(fd));
-		return fd;
+		_PR_LINE("node_num=%s\n", node_num);
+
+		snprintf(devnode, sizeof(devnode),
+			 DEV_DRV_NAME ".%s/engine", node_num);
+
+		_PR_LINE("Open %s\n", devnode);
+
+		fd = open(devnode, O_RDWR | O_SYNC);
+		if (fd < 0) {
+			/* Try legacy devnode name */
+			snprintf(devnode, sizeof(devnode),
+				 DEV_LEGACY_DRV_NAME ".%s", node_num);
+
+			_PR_LINE("Open, trying legacy: %s\n", devnode);
+
+			fd = open(devnode, O_RDWR | O_SYNC);
+			if (fd < 0) {
+				_PR_LINE("Error opening device err %d(%s)\n",
+					 fd, strerror(fd));
+				return fd;
+			}
+		}
 	}
 
 	while (p_log_buf == NULL) {
