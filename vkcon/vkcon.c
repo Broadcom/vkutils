@@ -357,7 +357,7 @@ int main(int argc, char **argv)
 		_PR_LINE("node_num=%s\n", node_num);
 
 		snprintf(devnode, sizeof(devnode),
-			 DEV_DRV_NAME ".%s/engine", node_num);
+			 DEV_DRV_NAME ".%s", node_num);
 
 		_PR_LINE("Open %s\n", devnode);
 
