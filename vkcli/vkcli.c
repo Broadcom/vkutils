@@ -58,15 +58,19 @@
 #define OPTION_LEN	8
 #define MAX_FILESIZE	0x4000000	/* 64MB */
 
+#define DEV_DRV_NAME "/dev/bcm_vk"
+#define DEV_LEGACY_DRV_NAME "/dev/bcm-vk"
+
 int main(int argc, char *argv[])
 {
-	char *devnode;
+	char devnode[50];
+	char *node_num = NULL;
 	int fd = -1;
 	int rc = -1;
 	int i;
 
 	if (argc < 3) {
-		printf("Usage: %s /dev/bcm-vk.N <args...>\n", argv[0]);
+		printf("Usage: %s <node_num> <args...>\n", argv[0]);
 		printf("Available arguments:\n");
 		printf("  gm - get metadata\n");
 		printf("  li - load image [-/boot1/boot2] [fname1] [fname2]\n");
@@ -81,14 +85,43 @@ int main(int argc, char *argv[])
 		return 0;
 	}
 
-	devnode = argv[1];
-	fprintf(stdout, "Open %s\n", devnode);
-	fflush(stdout);
-	fd = open(devnode, O_RDWR);
+	if (strlen(argv[1]) > 3) {
+		/* devnode must have been explicitly specified */
+
+		fprintf(stdout, " Open, trying devnode %s\n", argv[1]);
+		fflush(stdout);
+		fd = open(argv[1], O_RDWR);
+
+		if (strstr(argv[1], "/dev/bcm-vk.") == argv[1])
+			node_num = &argv[1][12];
+	} else {
+		node_num = argv[1];
+	}
+
 	if (fd < 0) {
-		perror("open failed!");
-		fflush(stderr);
-		exit(-1);
+		fprintf(stdout, "node_num=%s\n", node_num);
+		fflush(stdout);
+
+		snprintf(devnode, sizeof(devnode),
+			 DEV_DRV_NAME ".%s/engine", node_num);
+
+		fprintf(stdout, "Open %s\n", devnode);
+		fflush(stdout);
+		fd = open(devnode, O_RDWR);
+		if (fd < 0) {
+			/* Try legacy devnode name */
+			snprintf(devnode, sizeof(devnode),
+				 DEV_LEGACY_DRV_NAME ".%s", node_num);
+
+			fprintf(stdout, "Open, trying legacy: %s\n", devnode);
+			fflush(stdout);
+			fd = open(devnode, O_RDWR);
+			if (fd < 0) {
+				perror("open failed!");
+				fflush(stderr);
+				exit(-1);
+			}
+		}
 	}
 
 	for (i = 2; i < argc; i++) {
