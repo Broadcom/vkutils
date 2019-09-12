@@ -103,7 +103,7 @@ int main(int argc, char *argv[])
 		fflush(stdout);
 
 		snprintf(devnode, sizeof(devnode),
-			 DEV_DRV_NAME ".%s/engine", node_num);
+			 DEV_DRV_NAME ".%s", node_num);
 
 		fprintf(stdout, "Open %s\n", devnode);
 		fflush(stdout);
