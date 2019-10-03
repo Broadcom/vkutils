@@ -72,7 +72,7 @@ int main(int argc, char **argv)
 	Elf_Scn *scn;
 	Elf_Data *data;
 	uint8_t *buf;
-	uint32_t sz;
+	uint32_t sz, sz_pad;
 	uint64_t addr;
 	uint64_t entry_addr;
 	uint64_t magic = MAGIC;
@@ -87,6 +87,8 @@ int main(int argc, char **argv)
 	uint16_t nprocessors = 0;
 	int outfile_flag = 0;
 	int x, y;
+	int padding_bytes_nb;
+	uint8_t padding_data[] = { 0, 0, 0, 0 };
 
 	while ((c = getopt(argc, argv, "i:p:o:")) != -1) {
 		switch (c) {
@@ -195,13 +197,38 @@ int main(int argc, char **argv)
 			sz = data->d_size;
 			buf = data->d_buf;
 
+			/* Write ADDR, SZ, and DATA to binary file */
+			fwrite(&addr, sizeof(addr), 1, fd_out);
+			length += sizeof(addr);
+
+			/* Make the next section aligned in the binary file */
+			if (sz % sizeof(uint32_t)) {
+				padding_bytes_nb = sizeof(uint32_t) -
+						(sz % sizeof(uint32_t));
+			} else {
+				padding_bytes_nb = 0;
+			}
+			sz_pad = sz + padding_bytes_nb;
+			fwrite(&sz_pad, sizeof(sz_pad), 1, fd_out);
+			length += sizeof(sz_pad);
+
+			fwrite(buf, sizeof(*buf), sz, fd_out);
+			length += sizeof(*buf) * sz_pad;
+			/* pad the section with zeros */
+			if (padding_bytes_nb) {
+				fwrite(padding_data,
+				       sizeof(*buf),
+				       padding_bytes_nb,
+				       fd_out);
+			}
+
 			/* Debug info printing section generation information */
 			if (verbose) {
 				size_t shstrndx;
 				char *name;
 
 				printf("ADDR=0x%016" PRIx64 " SZ=0x%8.8x ",
-				       addr, sz);
+				       addr, sz_pad);
 
 				if (elf_getshdrstrndx(elf_in, &shstrndx) != 0)
 					errx(EXIT_FAILURE,
@@ -218,14 +245,6 @@ int main(int argc, char **argv)
 				printf("Section %-4.4jd %s\n",
 				       elf_ndxscn(scn), name);
 			}
-
-			/* Write ADDR, SZ, and DATA to binary file */
-			fwrite(&addr, sizeof(addr), 1, fd_out);
-			length += sizeof(addr);
-			fwrite(&sz, sizeof(sz), 1, fd_out);
-			length += sizeof(sz);
-			fwrite(buf, sizeof(*buf), sz, fd_out);
-			length += sizeof(*buf) * sz;
 		}
 
 		/* Write processor ID and entry addr */
