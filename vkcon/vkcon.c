@@ -260,7 +260,7 @@ static void vcon_in_cmd_loop(int fd, logger_buf *p_log_buf)
 		ret = vcon_send_cmd(fd, p_cmd, p_char);
 		if (ret) {
 			_PR_LINE("Send Cmd Failure %s\n, input exits...",
-				 strerror(ret));
+				 strerror(-ret));
 			break;
 		}
 	} while (ret >= 0);
@@ -307,6 +307,7 @@ int main(int argc, char **argv)
 				return -EINVAL;
 			}
 			strncpy(dev_name, optarg, sizeof(dev_name));
+			dev_name[sizeof(dev_name) - 1] = '\0';
 			break;
 		case 'i':
 			if (strcmp(VCON_ENABLE, optarg) == 0)
@@ -372,7 +373,7 @@ int main(int argc, char **argv)
 			fd = open(devnode, O_RDWR | O_SYNC);
 			if (fd < 0) {
 				_PR_LINE("Error opening device err %d(%s)\n",
-					 fd, strerror(fd));
+					 fd, strerror(-fd));
 				return fd;
 			}
 		}
