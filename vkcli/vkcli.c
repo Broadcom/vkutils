@@ -206,6 +206,8 @@ int main(int argc, char *argv[])
 				strncpy(image.filename,
 					filename1,
 					sizeof(image.filename));
+				image.filename[sizeof(image.filename) - 1]
+					= '\0';
 
 				fprintf(stdout, "Load image boot1 %s\n",
 					filename1);
@@ -229,6 +231,8 @@ int main(int argc, char *argv[])
 				strncpy(image.filename,
 					filename2,
 					sizeof(image.filename));
+				image.filename[sizeof(image.filename) - 1]
+					= '\0';
 
 				fprintf(stdout, "Load image boot2 %s\n",
 					filename2);
@@ -589,4 +593,3 @@ int main(int argc, char *argv[])
 
 	return 0;
 }
-
