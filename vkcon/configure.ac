@@ -2,7 +2,6 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_INIT([vkcon], [1.0])
-AC_LANG_WERROR
 AM_INIT_AUTOMAKE([-Wall -Werror subdir-objects foreign])
 
 # Checks for programs.
@@ -14,7 +13,8 @@ AM_CFLAGS="-Wall -Werror"
 AC_SUBST([AM_CFLAGS])
 # Checks for libraries.
 
-# Set shared libraries
+# Initialize Libtool
+LT_INIT([shared])
 
 # Checks for header files.
 # Checks for typedefs, structures, and compiler characteristics.
