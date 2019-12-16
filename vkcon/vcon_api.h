@@ -10,6 +10,10 @@
 #define VCON_ENABLE              "enable"
 #define VCON_DISABLE             "disable"
 
+/* start and end of virtual console cmd channel */
+#define VCON_COLOR_ON            "color_on"
+#define VCON_COLOR_OFF           "color_off"
+
 /* cmd buffer is 128 bytes, with 1 byte as header/control */
 #define VCON_MAX_CMD_SIZE        127
 #define VCON_CMD_CHAN_SIZE       (VCON_MAX_CMD_SIZE + 1)
