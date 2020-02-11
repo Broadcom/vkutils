@@ -230,6 +230,17 @@ int main(int argc, char *argv[])
 			unsigned long int barno;
 			unsigned long long int offset;
 
+			/*
+			 * make sure we have enough parameter before moving on,
+			 * need 3 more parameters including bar_no, offset and
+			 * value
+			 */
+			if ((i + 3) >= argc) {
+				fprintf(stdout,
+					"Not enough parameters for wb\n");
+				exit(EINVAL);
+			}
+
 			i++;
 			str = argv[i];
 			barno = strtoul(str, NULL, 10);
@@ -386,6 +397,16 @@ int main(int argc, char *argv[])
 			__u32 data[1];
 			unsigned long int barno;
 			unsigned long long int offset;
+
+			/*
+			 * make sure we have enough parameters before moving on,
+			 * need 2 more, bar_no and offset.
+			 */
+			if ((i + 2) >= argc) {
+				fprintf(stdout,
+					"Not enough parameters for rb\n");
+				exit(EINVAL);
+			}
 
 			i++;
 			str = argv[i];
