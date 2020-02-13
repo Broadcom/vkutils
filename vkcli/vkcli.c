@@ -561,8 +561,8 @@ int main(int argc, char *argv[])
 		if (!strcmp(str, "reset")) {
 			struct vk_reset reset;
 
-			reset.arg1 = 4;
-			reset.arg2 = 5;
+			reset.arg1 = 0;
+			reset.arg2 = 0;
 
 			fprintf(stdout, "Reset\n");
 			fflush(stdout);
