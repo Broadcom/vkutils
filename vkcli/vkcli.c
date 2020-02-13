@@ -72,7 +72,6 @@ int main(int argc, char *argv[])
 	if (argc < 3) {
 		printf("Usage: %s <node_num> <args...>\n", argv[0]);
 		printf("Available arguments:\n");
-		printf("  gm - get metadata\n");
 		printf("  li - load image [-/boot1/boot2] [fname1] [fname2]\n");
 		printf("     '-' -- load both stages (both boot1 and boot2)\n");
 		printf("     'boot1' -- only first stage (boot1)\n");
@@ -126,30 +125,6 @@ int main(int argc, char *argv[])
 
 	for (i = 2; i < argc; i++) {
 		char *str = argv[i];
-
-		if (!strcmp(str, "gm")) {
-			struct vk_metadata metadata;
-
-			fprintf(stdout, "Get metadata\n");
-			fflush(stdout);
-			rc = ioctl(fd, VK_IOCTL_GET_METADATA, &metadata);
-			if (rc < 0) {
-				perror("ioctl failed!");
-				fflush(stderr);
-				exit(rc);
-			}
-
-			fprintf(stdout, "Metadata version: 0x%x\n",
-				metadata.version);
-			fprintf(stdout, "Firmware version: 0x%x\n",
-				metadata.firmware_version);
-			fprintf(stdout, "Card Status: 0x%x\n",
-				metadata.card_status);
-			fprintf(stdout, "FW Status: 0x%x\n",
-				metadata.fw_status);
-			fflush(stdout);
-			continue;
-		}
 
 		if (!strcmp(str, "li")) {
 			struct vk_image image;
