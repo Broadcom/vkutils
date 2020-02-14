@@ -57,30 +57,43 @@
 #define FNAME_LEN	128
 #define OPTION_LEN	8
 #define MAX_FILESIZE	0x4000000	/* 64MB */
+#define MAX_ERR_MSG	255
 
 #define DEV_DRV_NAME "/dev/bcm_vk"
 #define DEV_LEGACY_DRV_NAME "/dev/bcm-vk"
+#define PERROR(...) do {\
+			snprintf(e_msg, MAX_ERR_MSG, __VA_ARGS__);\
+			fprintf(stderr, " @L:%d %s\n", __LINE__, e_msg);\
+			fflush(stderr);\
+			} while (0)
+
+
+void print_usage(char **argv)
+{
+	printf("Usage: %s <node_num> <args...>\n", argv[0]);
+	printf("Available arguments:\n");
+	printf("  li - load image [-/boot1/boot2] [fname1] [fname2]\n");
+	printf("     '-' -- load both stages (both boot1 and boot2)\n");
+	printf("     'boot1' -- only first stage (boot1)\n");
+	printf("     'boot2' -- only second stage (boot2)\n");
+	printf("  rb - read bar <barno> <offset>\n");
+	printf("  rf - read to file <barno> <offset> <len> file\n");
+	printf("  wb - write bar <barno> <offset> <value>\n");
+	printf("  wf - write from file <barno> <offset> file\n");
+	printf("  reset - reset\n");
+}
 
 int main(int argc, char *argv[])
 {
 	char devnode[50];
+	char e_msg[MAX_ERR_MSG] = "";
 	char *node_num = NULL;
 	int fd = -1;
 	int rc = -1;
 	int i;
 
 	if (argc < 3) {
-		printf("Usage: %s <node_num> <args...>\n", argv[0]);
-		printf("Available arguments:\n");
-		printf("  li - load image [-/boot1/boot2] [fname1] [fname2]\n");
-		printf("     '-' -- load both stages (both boot1 and boot2)\n");
-		printf("     'boot1' -- only first stage (boot1)\n");
-		printf("     'boot2' -- only second stage (boot2)\n");
-		printf("  rb - read bar <barno> <offset>\n");
-		printf("  rf - read to file <barno> <offset> <len> file\n");
-		printf("  wb - write bar <barno> <offset> <value>\n");
-		printf("  wf - write from file <barno> <offset> file\n");
-		printf("  reset - reset\n");
+		print_usage(argv);
 		return 0;
 	}
 
@@ -116,9 +129,9 @@ int main(int argc, char *argv[])
 			fflush(stdout);
 			fd = open(devnode, O_RDWR);
 			if (fd < 0) {
-				perror("open failed!");
-				fflush(stderr);
-				exit(-1);
+				PERROR("%s open failed; err=0x%x",
+				       devnode, errno);
+				exit(errno);
 			}
 		}
 	}
@@ -174,9 +187,9 @@ int main(int argc, char *argv[])
 				image.type = VK_IMAGE_TYPE_BOOT1;
 				if (strlen(filename1)
 				    >= sizeof(image.filename)) {
-					perror("filename1 too long - failed!");
-					fflush(stderr);
-					exit(-1);
+					PERROR("filename1 > max %ld",
+					       sizeof(image.filename));
+					exit(EINVAL);
 				}
 				strncpy(image.filename,
 					filename1,
@@ -189,8 +202,8 @@ int main(int argc, char *argv[])
 				fflush(stdout);
 				rc = ioctl(fd, VK_IOCTL_LOAD_IMAGE, &image);
 				if (rc < 0) {
-					perror("ioctl failed!");
-					fflush(stderr);
+					PERROR("VK_IOCTL_LOAD_IMAGE 0x%x",
+						rc);
 					exit(rc);
 				}
 			}
@@ -199,9 +212,9 @@ int main(int argc, char *argv[])
 				image.type = VK_IMAGE_TYPE_BOOT2;
 				if (strlen(filename2)
 				    >= sizeof(image.filename)) {
-					perror("filename2 too long - failed!");
-					fflush(stderr);
-					exit(-1);
+					PERROR("filename2 > max %ld",
+					       sizeof(image.filename));
+					exit(EINVAL);
 				}
 				strncpy(image.filename,
 					filename2,
@@ -214,8 +227,8 @@ int main(int argc, char *argv[])
 				fflush(stdout);
 				rc = ioctl(fd, VK_IOCTL_LOAD_IMAGE, &image);
 				if (rc < 0) {
-					perror("ioctl failed!");
-					fflush(stderr);
+					PERROR("VK_IOCTL_LOAD_IMAGE 0x%x",
+						rc);
 					exit(rc);
 				}
 			}
@@ -236,8 +249,8 @@ int main(int argc, char *argv[])
 			 * value
 			 */
 			if ((i + 3) >= argc) {
-				fprintf(stdout,
-					"Not enough parameters for wb\n");
+				print_usage(argv);
+				PERROR("Not enough parameters for wb");
 				exit(EINVAL);
 			}
 
@@ -245,18 +258,19 @@ int main(int argc, char *argv[])
 			str = argv[i];
 			barno = strtoul(str, NULL, 10);
 			if (errno != 0) {
-				fprintf(stdout, "invalid barno, errno=0x%x\n",
-					errno);
+				PERROR("bad barno %ld err=0x%x",
+				       barno, errno);
 				exit(errno);
 			}
-			fprintf(stdout, "barno=%lx\n", barno);
+			fprintf(stdout, "barno=%ld\n", barno);
 
 			i++;
 			str = argv[i];
 			offset = strtoul(str, NULL, _STR_BASE(str));
 			if (errno != 0) {
-				fprintf(stdout, "invalid offset, errno=0x%x\n",
-					errno);
+				print_usage(argv);
+				PERROR("bad offset %llx err=0x%x",
+				       offset, errno);
 				exit(errno);
 			}
 			fprintf(stdout, "offset=%llx\n", offset);
@@ -265,8 +279,9 @@ int main(int argc, char *argv[])
 			str = argv[i];
 			data[0] = strtoul(str, NULL, _STR_BASE(str));
 			if (errno != 0) {
-				fprintf(stdout, "invalid value, errno=0x%x\n",
-					errno);
+				print_usage(argv);
+				PERROR("bad value %d err=0x%x",
+				       data[0], errno);
 				exit(errno);
 			}
 			fprintf(stdout, "data=%x\n", data[0]);
@@ -282,13 +297,10 @@ int main(int argc, char *argv[])
 
 			rc = ioctl(fd, VK_IOCTL_ACCESS_BAR, &access);
 			if (rc < 0) {
-				perror("ioctl failed!");
-				fflush(stderr);
+				PERROR("VK_IOCTL_ACCESS_BAR 0x%x",
+					rc);
 				exit(rc);
 			}
-
-			fprintf(stdout, "0x%x\n", data[0]);
-			fflush(stdout);
 
 			fprintf(stdout, "    access bar done\n");
 			fflush(stdout);
@@ -308,18 +320,19 @@ int main(int argc, char *argv[])
 			str = argv[i];
 			barno = strtoul(str, NULL, 10);
 			if (errno != 0) {
-				fprintf(stdout, "Invalid barno, errno=0x%x\n",
-					errno);
+				PERROR("bad barno %ld err=0x%x",
+				       barno, errno);
 				exit(errno);
 			}
-			fprintf(stdout, "barno=%lx\n", barno);
+			fprintf(stdout, "barno=%ld\n", barno);
 
 			i++;
 			str = argv[i];
 			offset = strtoul(str, NULL, _STR_BASE(str));
 			if (errno != 0) {
-				fprintf(stdout, "Invalid offset, errno=0x%x\n",
-					errno);
+				print_usage(argv);
+				PERROR("bad offset %llx err=0x%x",
+				       offset, errno);
 				exit(errno);
 			}
 			fprintf(stdout, "offset=%llx\n", offset);
@@ -332,9 +345,9 @@ int main(int argc, char *argv[])
 
 			pfile = fopen(fname, "r");
 			if (pfile == NULL) {
-				perror("file open failed\n");
-				fflush(stderr);
-				exit(-1);
+				PERROR("fopen %s err=0x%x",
+					fname, errno);
+				exit(errno);
 			}
 
 			/* obtain file size */
@@ -343,29 +356,29 @@ int main(int argc, char *argv[])
 			rewind(pfile);
 			fprintf(stdout, "file size=%ld\n", fsize);
 			if (fsize <= 0 || fsize > MAX_FILESIZE) {
-				fprintf(stdout, "Invalid file size (%ld)\n",
+				PERROR("bad file size (%ld)",
 					fsize);
 				fclose(pfile);
-				exit(-1);
+				exit(errno);
 			}
 
 			/* allocation buffer to contain all file */
 			buffer = (char *)malloc(fsize);
 			if (buffer == NULL) {
-				perror("buffer allocation failed\n");
+				PERROR("bad alloc %ld bytes err=0x%x",
+					fsize, errno);
 				fclose(pfile);
-				fflush(stderr);
-				exit(-1);
+				exit(errno);
 			}
 
 			/* copy file into the buffer */
 			rc = fread(buffer, 1, fsize, pfile);
 			if (rc != fsize) {
-				perror("Fail to read buffer from file\n");
-				fflush(stderr);
+				PERROR("fread %s err=0x%x",
+					fname, errno);
 				fclose(pfile);
 				free(buffer);
-				exit(-1);
+				exit(errno);
 			}
 
 			access.barno = barno;
@@ -379,8 +392,8 @@ int main(int argc, char *argv[])
 
 			rc = ioctl(fd, VK_IOCTL_ACCESS_BAR, &access);
 			if (rc < 0) {
-				perror("ioctl failed!");
-				fflush(stderr);
+				PERROR("VK_IOCTL_ACCESS_BAR 0x%x",
+					rc);
 				exit(rc);
 			}
 
@@ -403,8 +416,8 @@ int main(int argc, char *argv[])
 			 * need 2 more, bar_no and offset.
 			 */
 			if ((i + 2) >= argc) {
-				fprintf(stdout,
-					"Not enough parameters for rb\n");
+				print_usage(argv);
+				PERROR("Not enough parameters for rb");
 				exit(EINVAL);
 			}
 
@@ -412,18 +425,20 @@ int main(int argc, char *argv[])
 			str = argv[i];
 			barno = strtoul(str, NULL, 10);
 			if (errno != 0) {
-				fprintf(stdout, "Invalid barno, errno=0x%x\n",
-					errno);
+				print_usage(argv);
+				PERROR("bad barno %ld err=0x%x",
+				       barno, errno);
 				exit(rc);
 			}
-			fprintf(stdout, "barno=%lx\n", barno);
+			fprintf(stdout, "barno=%ld\n", barno);
 
 			i++;
 			str = argv[i];
 			offset = strtoul(str, NULL, _STR_BASE(str));
 			if (errno != 0) {
-				fprintf(stdout, "Invalid offset, errno=0x%x\n",
-					errno);
+				print_usage(argv);
+				PERROR("bad offset %llx err=0x%x",
+				       offset, errno);
 				exit(rc);
 			}
 			fprintf(stdout, "offset=%llx\n", offset);
@@ -439,8 +454,8 @@ int main(int argc, char *argv[])
 
 			rc = ioctl(fd, VK_IOCTL_ACCESS_BAR, &access);
 			if (rc < 0) {
-				perror("ioctl failed!");
-				fflush(stderr);
+				PERROR("VK_IOCTL_ACCESS_BAR 0x%x",
+					rc);
 				exit(rc);
 			}
 
@@ -465,18 +480,19 @@ int main(int argc, char *argv[])
 			str = argv[i];
 			barno = strtoul(str, NULL, 10);
 			if (errno != 0) {
-				fprintf(stdout, "Invalid barno, errno=0x%x\n",
-					errno);
+				PERROR("bad barno %ld err=0x%x",
+				       barno, errno);
 				exit(errno);
 			}
-			fprintf(stdout, "barno=%lx\n", barno);
+			fprintf(stdout, "barno=%ld\n", barno);
 
 			i++;
 			str = argv[i];
 			offset = strtoul(str, NULL, _STR_BASE(str));
 			if (errno != 0) {
-				fprintf(stdout, "Invalid offset, errno=0x%x\n",
-					errno);
+				print_usage(argv);
+				PERROR("bad offset %llx; err=0x%x",
+					offset, errno);
 				exit(errno);
 			}
 			fprintf(stdout, "offset=%llx\n", offset);
@@ -485,15 +501,15 @@ int main(int argc, char *argv[])
 			str = argv[i];
 			fsize = strtoul(str, NULL, _STR_BASE(str));
 			if (errno != 0) {
-				fprintf(stdout,
-					"Invalid file size, errno=0x%x\n",
-					errno);
+				print_usage(argv);
+				PERROR("bad file size %ld err=0x%x",
+				       fsize, errno);
 				exit(errno);
 			}
 			if (fsize <= 0 || fsize > MAX_FILESIZE) {
-				fprintf(stdout, "Invalid file size (%ld)\n",
-					fsize);
-				exit(-1);
+				print_usage(argv);
+				PERROR("bad file size (%ld)", fsize);
+				exit(EINVAL);
 			}
 			fprintf(stdout, "fsize=%lx\n", fsize);
 
@@ -505,18 +521,17 @@ int main(int argc, char *argv[])
 
 			pfile = fopen(fname, "w");
 			if (pfile == NULL) {
-				perror("file open failed\n");
-				fflush(stderr);
-				exit(-1);
+				PERROR("fopen %s err=0x%x", fname, errno);
+				exit(errno);
 			}
 
 			/* allocation buffer to contain all file */
 			buffer = (char *)malloc(fsize);
 			if (buffer == NULL) {
-				perror("buffer allocation failed\n");
-				fflush(stderr);
+				PERROR("bad alloc %ld bytes err=0x%x",
+					fsize, errno);
 				fclose(pfile);
-				exit(-1);
+				exit(errno);
 			}
 
 			memset(buffer, 0, fsize);
@@ -532,8 +547,8 @@ int main(int argc, char *argv[])
 
 			rc = ioctl(fd, VK_IOCTL_ACCESS_BAR, &access);
 			if (rc < 0) {
-				perror("ioctl failed!");
-				fflush(stderr);
+				PERROR("VK_IOCTL_ACCESS_BAR 0x%x",
+					rc);
 				exit(rc);
 			}
 
@@ -543,8 +558,8 @@ int main(int argc, char *argv[])
 			/* copy buffer into file */
 			rc = fwrite(buffer, 1, fsize, pfile);
 			if (rc != fsize) {
-				perror("Fail to write buffer to file\n");
-				fflush(stderr);
+				PERROR("fwrite %ld bytes to %s err=0x%x",
+				       fsize, fname, errno);
 				exit(rc);
 			}
 
@@ -564,8 +579,8 @@ int main(int argc, char *argv[])
 			fflush(stdout);
 			rc = ioctl(fd, VK_IOCTL_RESET, &reset);
 			if (rc < 0) {
-				perror("ioctl failed!");
-				fflush(stderr);
+				PERROR("VK_IOCTL_RESET 0x%x",
+					rc);
 				exit(rc);
 			}
 			fprintf(stdout, "    reset done\n");
@@ -573,18 +588,18 @@ int main(int argc, char *argv[])
 			continue;
 		}
 
-		fprintf(stderr, "Invalid arguments!\n");
-		fflush(stderr);
-		exit(-1);
+		print_usage(argv);
+		PERROR("Invalid arguments!");
+		exit(EINVAL);
 	}
 
 	fprintf(stdout, "Close\n");
 	fflush(stdout);
 	rc = close(fd);
 	if (rc < 0) {
-		perror("Close failed!");
-		fflush(stderr);
-		exit(-1);
+		PERROR("Close failed; err=0x%x",
+			errno);
+		exit(errno);
 	}
 
 	return 0;
