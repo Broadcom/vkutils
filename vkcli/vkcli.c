@@ -43,6 +43,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -68,6 +69,23 @@
 			} while (0)
 
 
+/* strtoul wrapper function for unified error handling */
+static int string2ul(char *str, unsigned long *return_value)
+{
+	char *endptr = NULL;
+
+	if (str == NULL || return_value == NULL)
+		return -EINVAL;
+	*return_value = strtoul(str, &endptr, _STR_BASE(str));
+	if (endptr == str)
+		return -EFAULT;
+	if ((*return_value == LONG_MAX ||
+		*return_value == LONG_MIN) && errno == ERANGE)
+		return -ERANGE;
+
+	return 0;
+}
+
 void print_usage(char **argv)
 {
 	printf("Usage: %s <node_num> <args...>\n", argv[0]);
@@ -91,6 +109,7 @@ int main(int argc, char *argv[])
 	int fd = -1;
 	int rc = -1;
 	int i;
+	int err = 0;
 
 	if (argc < 3) {
 		print_usage(argv);
@@ -256,32 +275,32 @@ int main(int argc, char *argv[])
 
 			i++;
 			str = argv[i];
-			barno = strtoul(str, NULL, 10);
-			if (errno != 0) {
-				PERROR("bad barno %ld err=0x%x",
-				       barno, errno);
+			err = string2ul(str, &barno);
+			if (err < 0) {
+				PERROR("bad barno %s err=0x%x",
+					str, errno);
 				exit(errno);
 			}
 			fprintf(stdout, "barno=%ld\n", barno);
 
 			i++;
 			str = argv[i];
-			offset = strtoul(str, NULL, _STR_BASE(str));
-			if (errno != 0) {
+			err = string2ul(str, (unsigned long *)&offset);
+			if (err < 0) {
 				print_usage(argv);
-				PERROR("bad offset %llx err=0x%x",
-				       offset, errno);
+				PERROR("bad offset %s err=0x%x",
+				       str, errno);
 				exit(errno);
 			}
 			fprintf(stdout, "offset=%llx\n", offset);
 
 			i++;
 			str = argv[i];
-			data[0] = strtoul(str, NULL, _STR_BASE(str));
-			if (errno != 0) {
+			err = string2ul(str, (unsigned long *)&data[0]);
+			if (err < 0) {
 				print_usage(argv);
-				PERROR("bad value %d err=0x%x",
-				       data[0], errno);
+				PERROR("bad value %s err=0x%x",
+					str, errno);
 				exit(errno);
 			}
 			fprintf(stdout, "data=%x\n", data[0]);
@@ -318,21 +337,21 @@ int main(int argc, char *argv[])
 
 			i++;
 			str = argv[i];
-			barno = strtoul(str, NULL, 10);
-			if (errno != 0) {
-				PERROR("bad barno %ld err=0x%x",
-				       barno, errno);
+			err = string2ul(str, &barno);
+			if (err < 0) {
+				PERROR("bad barno %s err=0x%x",
+				       str, errno);
 				exit(errno);
 			}
 			fprintf(stdout, "barno=%ld\n", barno);
 
 			i++;
 			str = argv[i];
-			offset = strtoul(str, NULL, _STR_BASE(str));
-			if (errno != 0) {
+			err = string2ul(str, (unsigned long *)&offset);
+			if (err < 0) {
 				print_usage(argv);
-				PERROR("bad offset %llx err=0x%x",
-				       offset, errno);
+				PERROR("bad offset %s err=0x%x",
+					str, errno);
 				exit(errno);
 			}
 			fprintf(stdout, "offset=%llx\n", offset);
@@ -356,8 +375,8 @@ int main(int argc, char *argv[])
 			rewind(pfile);
 			fprintf(stdout, "file size=%ld\n", fsize);
 			if (fsize <= 0 || fsize > MAX_FILESIZE) {
-				PERROR("bad file size (%ld)",
-					fsize);
+				PERROR("bad file size %s (%ld)",
+					fname, fsize);
 				fclose(pfile);
 				exit(errno);
 			}
@@ -423,23 +442,23 @@ int main(int argc, char *argv[])
 
 			i++;
 			str = argv[i];
-			barno = strtoul(str, NULL, 10);
-			if (errno != 0) {
+			err = string2ul(str, &barno);
+			if (err < 0) {
 				print_usage(argv);
-				PERROR("bad barno %ld err=0x%x",
-				       barno, errno);
-				exit(rc);
+				PERROR("bad barno %s err=0x%x",
+					str, errno);
+				exit(errno);
 			}
 			fprintf(stdout, "barno=%ld\n", barno);
 
 			i++;
 			str = argv[i];
-			offset = strtoul(str, NULL, _STR_BASE(str));
-			if (errno != 0) {
+			err = string2ul(str, (unsigned long *)&offset);
+			if (err < 0) {
 				print_usage(argv);
-				PERROR("bad offset %llx err=0x%x",
-				       offset, errno);
-				exit(rc);
+				PERROR("bad parameter %s err=0x%x",
+					str, errno);
+				exit(errno);
 			}
 			fprintf(stdout, "offset=%llx\n", offset);
 
@@ -478,32 +497,32 @@ int main(int argc, char *argv[])
 
 			i++;
 			str = argv[i];
-			barno = strtoul(str, NULL, 10);
-			if (errno != 0) {
-				PERROR("bad barno %ld err=0x%x",
-				       barno, errno);
+			err = string2ul(str, &barno);
+			if (err < 0) {
+				PERROR("bad barno %s err=0x%x",
+					str, errno);
 				exit(errno);
 			}
 			fprintf(stdout, "barno=%ld\n", barno);
 
 			i++;
 			str = argv[i];
-			offset = strtoul(str, NULL, _STR_BASE(str));
-			if (errno != 0) {
+			err = string2ul(str, (unsigned long *)&offset);
+			if (err < 0) {
 				print_usage(argv);
-				PERROR("bad offset %llx; err=0x%x",
-					offset, errno);
+				PERROR("bad offset %s err=0x%x",
+					str, errno);
 				exit(errno);
 			}
 			fprintf(stdout, "offset=%llx\n", offset);
 
 			i++;
 			str = argv[i];
-			fsize = strtoul(str, NULL, _STR_BASE(str));
-			if (errno != 0) {
+			err = string2ul(str, (unsigned long *)&fsize);
+			if (err < 0) {
 				print_usage(argv);
-				PERROR("bad file size %ld err=0x%x",
-				       fsize, errno);
+				PERROR("bad file size %s err=0x%x",
+					str, errno);
 				exit(errno);
 			}
 			if (fsize <= 0 || fsize > MAX_FILESIZE) {
