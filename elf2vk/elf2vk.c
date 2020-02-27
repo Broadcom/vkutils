@@ -87,6 +87,7 @@ int main(int argc, char **argv)
 	uint16_t nprocessors = 0;
 	int outfile_flag = 0;
 	int x, y;
+	int rc;
 	int padding_bytes_nb;
 	uint8_t padding_data[] = { 0, 0, 0, 0 };
 
@@ -276,7 +277,10 @@ int main(int argc, char **argv)
 		printf("MAGIC=0x%jx\n", MAGIC);
 
 	/* Update length field near start of file */
-	fseek(fd_out, sizeof(magic), SEEK_SET);
+	rc = fseek(fd_out, sizeof(magic), SEEK_SET);
+	if (rc < 0)
+		errx(EXIT_FAILURE, "fseek failed");
+
 	fwrite(&length, sizeof(length), 1, fd_out);
 
 	fclose(fd_out);
