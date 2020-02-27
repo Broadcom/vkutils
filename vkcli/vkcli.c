@@ -161,8 +161,8 @@ int main(int argc, char *argv[])
 		if (!strcmp(str, "li")) {
 			struct vk_image image;
 			char method[OPTION_LEN] = "-";
-			char filename1[FNAME_LEN] = "vk-boot1.bin";
-			char filename2[FNAME_LEN] = "vk-boot2.bin";
+			char filename1[FNAME_LEN] = "";
+			char filename2[FNAME_LEN] = "";
 
 			if (argc >= 4) {
 				/* method */
@@ -189,27 +189,8 @@ int main(int argc, char *argv[])
 				fprintf(stdout, "file name 2=%s\n", filename2);
 			}
 
-			if (!strcmp(method, "boot1")) {
-				filename2[0] = '\0';
-			} else if (!strcmp(method, "boot2")) {
-				/* If user specified file name,
-				 * the 1st filename will be used for boot2
-				 */
-				if (!strcmp(filename1, "vk-boot1.bin"))
-					strcpy(filename2, "vk-boot2.bin");
-				else
-					strcpy(filename2, filename1);
-				filename1[0] = '\0';
-			}
-
-			if (strcmp(filename1, "")) {
+			if (strcmp(method, "boot2")) {
 				image.type = VK_IMAGE_TYPE_BOOT1;
-				if (strlen(filename1)
-				    >= sizeof(image.filename)) {
-					PERROR("filename1 > max %ld",
-					       sizeof(image.filename));
-					exit(EINVAL);
-				}
 				strncpy(image.filename,
 					filename1,
 					sizeof(image.filename));
@@ -226,18 +207,19 @@ int main(int argc, char *argv[])
 					exit(rc);
 				}
 			}
-
-			if (strcmp(filename2, "")) {
+			if (strcmp(method, "boot1")) {
 				image.type = VK_IMAGE_TYPE_BOOT2;
-				if (strlen(filename2)
-				    >= sizeof(image.filename)) {
-					PERROR("filename2 > max %ld",
-					       sizeof(image.filename));
-					exit(EINVAL);
+				if (!strcmp(method, "boot2")) {
+					/* filename1 contains boot2 */
+					strncpy(image.filename,
+						filename1,
+						sizeof(image.filename));
+				} else {
+					/* filename2 contains boot2 */
+					strncpy(image.filename,
+						filename2,
+						sizeof(image.filename));
 				}
-				strncpy(image.filename,
-					filename2,
-					sizeof(image.filename));
 				image.filename[sizeof(image.filename) - 1]
 					= '\0';
 
