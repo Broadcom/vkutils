@@ -352,7 +352,12 @@ int main(int argc, char *argv[])
 			}
 
 			/* obtain file size */
-			fseek(pfile, 0, SEEK_END);
+			rc = fseek(pfile, 0, SEEK_END);
+			if (rc < 0) {
+				PERROR("fseek 0x%x", rc);
+				exit(rc);
+			}
+
 			fsize = ftell(pfile);
 			rewind(pfile);
 			fprintf(stdout, "file size=%ld\n", fsize);
