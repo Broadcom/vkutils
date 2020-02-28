@@ -5,18 +5,16 @@
  * Derived from:
  * pcimem.c: Simple program to read/write to a pci device from userspace
  *
- */
-/*
- *  Copyright (C) 2010, Bill Farrow (bfarrow@beyondelectronics.us)
+ * Copyright (C) 2010, Bill Farrow (bfarrow@beyondelectronics.us)
  *
- *  Based on the devmem2.c code
- *  Copyright (C) 2000, Jan-Derk Bakker (J.D.Bakker@its.tudelft.nl)
+ * Based on the devmem2.c code
+ * Copyright (C) 2000, Jan-Derk Bakker (J.D.Bakker@its.tudelft.nl)
+ *
  */
 
-#include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <signal.h>
+#include "pcimem.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -32,164 +30,176 @@
 		__LINE__, __FILE__, errno, strerror(errno)); exit(1); \
 	} while(0)
 
-
-int main(int argc, char **argv) {
-	int fd;
-	void *map_base, *virt_addr;
-	uint64_t read_result, writeval, prev_read_result = 0;
-	char *filename;
-	off_t target, target_base;
-	int access_type = 'w';
-	int items_count = 1;
-	int verbose = 0;
-	int read_result_dupped = 0;
-	int type_width;
-	int i;
-	int map_size = 4096UL;
-
-	if (argc < 3) {
-		/* pcimem */
-		/* /sys/bus/pci/devices/0001\:00\:07.0/resource0 0x100 w 0x00 */
-		/* argv[0] [1] [2] [3] [4] */
-		fprintf(stderr, "\nUsage:\t%s { sysfile } { offset } [ type*count [ data ] ]\n"
-			"\tsys file: sysfs file for the pci resource to act on\n"
-			"\toffset  : offset into pci memory region to act upon\n"
-			"\ttype    : access operation type : [b]yte, [h]alfword, [w]ord, [d]ouble-word\n"
-			"\t*count  : number of items to read:  w*100 will dump 100 words\n"
-			"\tdata    : data to be written\n\n",
-			argv[0]);
-		exit(1);
-	}
-	filename = argv[1];
-	target = strtoul(argv[2], 0, 0);
-
-	if (argc > 3) {
-		access_type = tolower(argv[3][0]);
-		if (argv[3][1] == '*')
-			items_count = strtoul(argv[3]+2, 0, 0);
-	}
-
-	switch (access_type) {
-	case 'b':
-		type_width = 1;
-		break;
-	case 'h':
-		type_width = 2;
-		break;
-	case 'w':
-		type_width = 4;
-		break;
-	case 'd':
-		type_width = 8;
-		break;
-	default:
-		fprintf(stderr, "Illegal data type '%c'.\n",
-			access_type);
-		exit(2);
-	}
-
-	fd = open(filename, O_RDWR | O_SYNC);
-	if (fd == -1)
+/**
+ * @brief pcimem_init init the pcimem library; opens the device as file
+ *
+ * @param[in] device_name name of the device to init
+ * @param[out] p_info->map_size init the map_size to system PAGE_SIZE
+ * @param[out] pfd - pointer to the device file descriptor
+ *
+ * @return 0 on success, error code otherwise
+ */
+int pcimem_init(const char *device_name, map_info *p_info, int *pfd)
+{
+	*pfd = open(device_name, O_RDWR | O_SYNC);
+	if (*pfd == -1) {
 		PRINT_ERROR;
-	printf("%s opened.\n", filename);
-	printf("Target offset is 0x%x, page size is %ld\n",
-		(int)target, sysconf(_SC_PAGE_SIZE));
+		return -EINVAL;
+	}
+	printf("%s opened.\n", device_name);
+	printf("Page size is %ld\n", sysconf(_SC_PAGE_SIZE));
 	fflush(stdout);
+	p_info->map_size = sysconf(_SC_PAGE_SIZE);
 
+	return 0;
+}
+
+/**
+ * @brief perform memory map for the previous open device
+ *
+ * @param[in] p_info->map_size used in map call
+ * @param[out] p_info->map_base - base address mapped in user space
+ * @param[in] fd - the device file descriptor
+ * @param[in] target - offset from base to access
+ * @param[in] type_width - access width in bytes
+ *
+ * @return 0 on success, error code otherwise
+ */
+int pcimem_map_base(map_info *p_info,
+		    const int fd,
+		    const off_t target,
+		    const int type_width)
+{
+	off_t target_base;
 	target_base = target & ~(sysconf(_SC_PAGE_SIZE)-1);
-	if (target + items_count*type_width - target_base > map_size)
-		map_size = target + items_count*type_width - target_base;
+
+	if (target + type_width - target_base > p_info->map_size)
+		p_info->map_size = target + type_width - target_base;
 
 	/* Map one page */
 	printf("mmap(%d, %d, 0x%x, 0x%x, %d, 0x%x)\n",
 		0,
-		map_size,
+		p_info->map_size,
 		PROT_READ | PROT_WRITE,
 		MAP_SHARED,
 		fd,
 		(int)target);
 
-	map_base = mmap(0,
-			map_size,
-			PROT_READ | PROT_WRITE, MAP_SHARED,
+	p_info->map_base =
+		mmap(0,
+			p_info->map_size,
+			PROT_READ | PROT_WRITE,
+			MAP_SHARED,
 			fd,
 			target_base);
-	if (map_base == (void *) -1)
+	if (p_info->map_base == (void *) -1) {
 		PRINT_ERROR;
+		return -EINVAL;
+	}
 	printf("PCI Memory mapped to address 0x%08lx.\n",
-		(unsigned long)map_base);
+		(unsigned long)p_info->map_base);
 	fflush(stdout);
+	return 0;
+}
 
-	for (i = 0; i < items_count; i++) {
+/**
+ * @breif pcimem_read reads from mem map space
+ *
+ * @param[in] p_info->map_base - base address mapped in user space
+ * @param[in] target - offset from base to access
+ * @param[in] type_width - access width in bytes
+ *
+ * @return the value read from offset
+ */
+uint64_t pcimem_read(const map_info *p_info,
+		     const off_t target,
+		     const int type_width)
+{
+	void *virt_addr;
+	uint64_t read_result = -1;
+	off_t target_base = target & ~(sysconf(_SC_PAGE_SIZE)-1);
 
-		virt_addr = map_base + target + i*type_width - target_base;
-		switch (access_type) {
-		case 'b':
-			read_result = *((uint8_t *) virt_addr);
-			break;
-		case 'h':
-			read_result = *((uint16_t *) virt_addr);
-			break;
-		case 'w':
-			read_result = *((uint32_t *) virt_addr);
-			break;
-		case 'd':
-			read_result = *((uint64_t *) virt_addr);
-			break;
-		}
-
-		if (verbose)
-			printf("Value at offset 0x%X (%p): 0x%0*lX\n",
-				(int)target + i*type_width,
-				virt_addr,
-				type_width*2,
-				read_result);
-		else {
-			if (read_result != prev_read_result || i == 0) {
-				printf("0x%04X: 0x%0*lX\n",
-					(int)(target + i*type_width),
-					type_width*2,
-					read_result);
-				read_result_dupped = 0;
-			} else {
-				if (!read_result_dupped)
-					printf("...\n");
-				read_result_dupped = 1;
-			}
-		}
-
-		prev_read_result = read_result;
+	virt_addr = p_info->map_base + target - target_base;
+	switch (type_width) {
+	case 1:
+		read_result = *((uint8_t *)virt_addr);
+		break;
+	case 2:
+		read_result = *((uint16_t *)virt_addr);
+		break;
+	case 4:
+		read_result = *((uint32_t *)virt_addr);
+		break;
+	case 8:
+		read_result = *((uint64_t *)virt_addr);
+		break;
+	default:
+		return -EINVAL;
 	}
+	return read_result;
+}
 
+/**
+ * @breif pcimem_write writes to mem map space
+ *
+ * @param[in] p_info->map_base - base address mapped in user space
+ * @param[in] target - offset from base to access
+ * @param[in] type_width - access width in bytes
+ *
+ * @return the value read back from the same location written
+ */
+uint64_t pcimem_write(const map_info *p_info,
+		      const off_t target,
+		      const uint64_t write_val,
+		      const int type_width)
+{
+	void *virt_addr;
+	uint64_t read_result = -1;
+	off_t target_base = target & ~(sysconf(_SC_PAGE_SIZE)-1);
+
+	virt_addr = p_info->map_base + target - target_base;
+	switch (type_width) {
+	case 1:
+		*((uint8_t *)virt_addr) = write_val;
+		read_result = *((uint8_t *)virt_addr);
+		break;
+	case 2:
+		*((uint16_t *)virt_addr) = write_val;
+		read_result = *((uint16_t *)virt_addr);
+		break;
+	case 4:
+		*((uint32_t *)virt_addr) = write_val;
+		read_result = *((uint32_t *)virt_addr);
+		break;
+	case 8:
+		*((uint64_t *)virt_addr) = write_val;
+		read_result = *((uint64_t *)virt_addr);
+		break;
+	default:
+		return -EINVAL;
+	}
+	printf("Written 0x%0*lX; readback 0x%*lX\n",
+		type_width, write_val, type_width, read_result);
 	fflush(stdout);
+	return read_result;
+}
 
-	if (argc > 4) {
-		writeval = strtoull(argv[4], NULL, 0);
-		switch (access_type) {
-		case 'b':
-			*((uint8_t *)virt_addr) = writeval;
-			read_result = *((uint8_t *)virt_addr);
-			break;
-		case 'h':
-			*((uint16_t *)virt_addr) = writeval;
-			read_result = *((uint16_t *)virt_addr);
-			break;
-		case 'w':
-			*((uint32_t *)virt_addr) = writeval;
-			read_result = *((uint32_t *)virt_addr);
-			break;
-		case 'd':
-			*((uint64_t *)virt_addr) = writeval;
-			read_result = *((uint64_t *)virt_addr);
-			break;
-		}
-		printf("Written 0x%0*lX; readback 0x%*lX\n",
-			type_width, writeval, type_width, read_result);
-		fflush(stdout);
-	}
-
-	if (munmap(map_base, map_size) == -1)
+/**
+ * @brief pcimem_deinit deinit the pcimem library;
+ * unmap, make map_base pointer NULL, closes the file descriptor
+ *
+ * @param[in/out] p_info->map_base - base address mapped in user space
+ * @param[in/out] pfd - pointer to the device file descriptor
+ *
+ * @return 0 on success, error code otherwise
+ */
+int pcimem_deinit(map_info *p_info, int *pfd)
+{
+	if (munmap(p_info->map_base, p_info->map_size) == -1) {
 		PRINT_ERROR;
-	close(fd);
+		return -EINVAL;
+	}
+	p_info->map_base = NULL;
+	close(*pfd);
 	return 0;
 }
