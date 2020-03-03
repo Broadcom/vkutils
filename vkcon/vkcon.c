@@ -250,8 +250,13 @@ int main(int argc, char **argv)
 	}
 
 free_and_exit:
-	if (ret != -EACCES)
-		vcon_send_cmd(fd, VCON_DISABLE);
+	if (ret != -EACCES) {
+		ret = vcon_send_cmd(fd, VCON_DISABLE);
+		if (ret) {
+			_PR_LINE("VCON_DISABLE Send Cmd Failure - %s(%d)",
+				 strerror(-ret), ret);
+		}
+	}
 
 	/* close communication channel in the end */
 	ret = vcon_close_cmd_chan(fd);
