@@ -14,7 +14,6 @@
 
 #include <errno.h>
 #include <fcntl.h>
-#include "pcimem.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -23,6 +22,8 @@
 #include <sys/types.h>
 #include <termios.h>
 #include <unistd.h>
+
+#include "pcimem.h"
 
 #define PRINT_ERROR \
 	do { \
