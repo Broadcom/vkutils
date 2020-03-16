@@ -85,9 +85,10 @@
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
 #endif
 
-#define MAX_SCMD_LEN	20
-#define MAX_SYS_PATH	200
-#define MAX_DID_DIGIT	2
+#define MAX_SCMD_LEN		20
+#define MAX_SYS_PATH		200
+#define MAX_DID_DIGIT		2
+#define MAX_CARDS_PER_HOST	12
 
 /* transaction width - future use - all is 32 bit for now */
 enum align {
@@ -350,14 +351,16 @@ static int is_valid_cmd(int cmd_cnt,
 	}
 	/* legacy dev node naming */
 	if (strlen(str) > MAX_DID_DIGIT) {
-		if (strstr(str, "/dev/bcm") == NULL)
+		str = strstr(str, "/dev/bcm");
+		if (str == NULL)
 			return -EINVAL;
-		if (strtok(str, limits) == NULL)
+		str = strtok(str, limits);
+		if (str == NULL)
 			return -EINVAL;
-		ret = string2ul(strtok(NULL, limits),
-				(unsigned long *)&value);
-		ret = (ret == STATUS_OK) ? value : ret;
-		*node_id = (ret < ND_LAST) ? ret : ND_LAST;
+		str = strtok(NULL, limits);
+		if (str == NULL)
+			return -EINVAL;
+		ret = STATUS_OK;
 	} else {
 		for (i = 0; i < strlen(str); i++) {
 			ret = -EINVAL;
@@ -371,9 +374,13 @@ static int is_valid_cmd(int cmd_cnt,
 		return ret;
 	ret = string2ul(str,
 			(unsigned long *)&value);
-	ret = (ret == STATUS_OK) ? value : ret;
-	*node_id = (ret < ND_LAST) ? value : ND_LAST;
-	return STATUS_OK;
+	if (ret == STATUS_OK &&
+	    value >= 0 &&
+	    value < MAX_CARDS_PER_HOST) {
+		*node_id = value;
+		return STATUS_OK;
+	}
+	return -EINVAL;
 }
 
 static int cmd_get_class(int scmds_cnt)
@@ -723,12 +730,20 @@ static int  cmd_handler(int cmd_cnt,
 					     c_id,
 					     device_path,
 					     NULL);
-			ret =  handle_cmd_apply(fnode,
-						res,
-						c_id,
-						data,
-						scmds_found,
-						device_path);
+			if (rc < 0) {
+				PERROR("bad node; %d %s err=0x%x",
+				       fnode,
+				       device_path,
+				       errno);
+				ret = rc;
+			} else {
+				ret =  handle_cmd_apply(fnode,
+							res,
+							c_id,
+							data,
+							scmds_found,
+							device_path);
+			}
 		} else {
 			PERROR("bad command; %d %s err=0x%x",
 			       c_id,
