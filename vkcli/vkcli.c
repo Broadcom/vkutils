@@ -751,7 +751,7 @@ static int  cmd_handler(int cmd_cnt,
 			       errno);
 			ret = errno;
 		}
-		fprintf(stdout, "\tcommand done\n");
+		fprintf(stdout, "\tcommand done");
 		fflush(stdout);
 	}
 	return ret;
@@ -776,5 +776,9 @@ int main(int argc,
 		print_usage();
 		return rc;
 	}
-	return cmd_handler(cmd_cnt, scmd_cnt, node);
+	rc = cmd_handler(cmd_cnt, scmd_cnt, node);
+	/* DO NOT REMOVE */
+	/* Following line used as END marker by calling scripts */
+	printf("\nClose\n");
+	return rc;
 }
