@@ -55,7 +55,6 @@
 #include "bcm_vk.h"
 #include "pcimem.h"
 
-#define STATUS_OK	0
 #define TEST_NODE	0xFFFFFFFF
 
 /* local macros */
@@ -89,14 +88,6 @@
 #define MAX_SYS_PATH		200
 #define MAX_DID_DIGIT		2
 #define MAX_CARDS_PER_HOST	12
-
-/* transaction width - future use - all is 32 bit for now */
-enum align {
-	ALIGN_8BIT = 1,
-	ALIGN_16BIT = 2,
-	ALIGN_32BIT = 4,
-	ALIGN_64BIT = 8
-};
 
 /* fixed position/order of command line arguments */
 enum arg_index {
@@ -189,8 +180,8 @@ static struct cmd_attributes attr_lookup_tbl[] = {
 	{ {"boot1", "boot2", "-"},  CTRL_CMDS,    1, 2 },
 	{ { "" },                   IO_AXS_CMDS,  2, 2 },
 	{ { "" },                   IO_AXS_CMDS,  3, 3 },
-	{ { "" },                   FIO_AXS_CMDS, 3, 3 },
-	{ { "" },                   FIO_AXS_CMDS, 4, 4 }
+	{ { "" },                   FIO_AXS_CMDS, 4, 4 },
+	{ { "" },                   FIO_AXS_CMDS, 5, 5 }
 };
 
 /* main lookup table */
@@ -599,7 +590,7 @@ static int cmd_io(int fd,
 	map_info lmap_info = { NULL, 4096 };
 	unsigned long long offset;
 	int rc, ret = -EINVAL;
-	int value;
+	int length = 0;
 
 	if (scmd_cnt < 2) {
 		PERROR("%s: invalid io read command; cnt=%d\n",
@@ -615,26 +606,37 @@ static int cmd_io(int fd,
 		pcimem_map_base(&lmap_info,
 				fnode,
 				offset,
-				ALIGN_32BIT);
-		if (cmd_idx == CMD_READ_BIN) {
-			data[0] = (int)pcimem_read(&lmap_info,
+				ALIGN_32_BIT);
+		switch (cmd_idx) {
+		case CMD_READ_BIN:
+			length = 1;
+			/* intentional fallthrough */
+		case CMD_READ_FILE:
+			rc = (int)pcimem_read(&lmap_info,
 						   offset,
-						   ALIGN_32BIT);
-			if (data[0] >= 0) {
+						   length,
+						   data,
+						   ALIGN_32_BIT);
+			if (rc >= 0) {
 				ret = STATUS_OK;
 				fprintf(stdout,
 					"0x%04llX: 0x%0*X\n",
 					offset,
-					2 * ALIGN_32BIT,
+					2 * ALIGN_32_BIT,
 					data[0]);
 			}
-		} else if (cmd_idx == CMD_WRITE_BIN) {
+			break;
+		case CMD_WRITE_BIN:
+			length = 1;
 			/* by convention.. */
-			value = scmd_idx[2];
+			data[0] = scmd_idx[2];
+			/* intentional fallthrough */
+		case CMD_WRITE_FILE:
 			rc = (int)pcimem_write(&lmap_info,
-						offset,
-						value,
-						ALIGN_32BIT);
+					       offset,
+					       length,
+					       data,
+					       ALIGN_32_BIT);
 			if (rc < 0) {
 				PERROR("%s: bad io write; err=0x%x\n",
 				       cmd_lookup_tbl[cmd_idx].cmd_name,
@@ -643,7 +645,8 @@ static int cmd_io(int fd,
 			} else {
 				ret = STATUS_OK;
 			}
-		}
+			break;
+		};
 		fprintf(stdout, "\taccess bar done\n");
 		fflush(stdout);
 		pcimem_deinit(&lmap_info,
@@ -651,7 +654,6 @@ static int cmd_io(int fd,
 	}
 	return ret;
 }
-
 
 static int handle_cmd_apply(enum cmd_node node,
 			    int resource,
