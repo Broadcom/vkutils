@@ -112,32 +112,33 @@ int pcimem_map_base(map_info *p_info,
  *
  * @return the value read from offset
  */
-uint64_t pcimem_read(const map_info *p_info,
-		     const off_t target,
-		     const int type_width)
+int pcimem_read(const map_info *p_info,
+		const off_t target,
+		const int d_size,
+		void *p_data,
+		const int type_width)
 {
 	void *virt_addr;
-	uint64_t read_result = -1;
 	off_t target_base = target & ~(sysconf(_SC_PAGE_SIZE)-1);
 
 	virt_addr = p_info->map_base + target - target_base;
 	switch (type_width) {
-	case 1:
-		read_result = *((uint8_t *)virt_addr);
+	case ALIGN_8_BIT:
+		*(uint8_t *)p_data = *((uint8_t *)virt_addr);
 		break;
-	case 2:
-		read_result = *((uint16_t *)virt_addr);
+	case ALIGN_16_BIT:
+		*(uint16_t *)p_data = *((uint16_t *)virt_addr);
 		break;
-	case 4:
-		read_result = *((uint32_t *)virt_addr);
+	case ALIGN_32_BIT:
+		*(uint32_t *)p_data = *((uint32_t *)virt_addr);
 		break;
-	case 8:
-		read_result = *((uint64_t *)virt_addr);
+	case ALIGN_64_BIT:
+		*(uint64_t *)p_data = *((uint64_t *)virt_addr);
 		break;
 	default:
 		return -EINVAL;
 	}
-	return read_result;
+	return STATUS_OK;
 }
 
 /**
@@ -149,10 +150,11 @@ uint64_t pcimem_read(const map_info *p_info,
  *
  * @return the value read back from the same location written
  */
-uint64_t pcimem_write(const map_info *p_info,
-		      const off_t target,
-		      const uint64_t write_val,
-		      const int type_width)
+int pcimem_write(const map_info *p_info,
+		 const off_t target,
+		 const int d_size,
+		 void *p_data,
+		 const int type_width)
 {
 	void *virt_addr;
 	uint64_t read_result = -1;
@@ -160,29 +162,29 @@ uint64_t pcimem_write(const map_info *p_info,
 
 	virt_addr = p_info->map_base + target - target_base;
 	switch (type_width) {
-	case 1:
-		*((uint8_t *)virt_addr) = write_val;
+	case ALIGN_8_BIT:
+		*((uint8_t *)virt_addr) = *(uint8_t *)p_data;
 		read_result = *((uint8_t *)virt_addr);
 		break;
-	case 2:
-		*((uint16_t *)virt_addr) = write_val;
+	case ALIGN_16_BIT:
+		*((uint16_t *)virt_addr) = *(uint16_t *)p_data;
 		read_result = *((uint16_t *)virt_addr);
 		break;
-	case 4:
-		*((uint32_t *)virt_addr) = write_val;
+	case ALIGN_32_BIT:
+		*((uint32_t *)virt_addr) = *(uint32_t *)p_data;
 		read_result = *((uint32_t *)virt_addr);
 		break;
-	case 8:
-		*((uint64_t *)virt_addr) = write_val;
+	case ALIGN_64_BIT:
+		*((uint64_t *)virt_addr) = *(uint64_t *)p_data;
 		read_result = *((uint64_t *)virt_addr);
 		break;
 	default:
 		return -EINVAL;
 	}
-	printf("Written 0x%0*lX; readback 0x%*lX\n",
-		type_width, write_val, type_width, read_result);
-	fflush(stdout);
-	return read_result;
+	if (read_result != *(uint64_t *)p_data)
+		return -EINVAL;
+
+	return STATUS_OK;
 }
 
 /**

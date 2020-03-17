@@ -10,6 +10,16 @@
 #include <stdint.h>
 #include <sys/types.h>
 
+#define STATUS_OK	0
+
+/* transaction width - future use - all is 32 bit for now */
+enum bit_align {
+	ALIGN_8_BIT = 1,
+	ALIGN_16_BIT = 2,
+	ALIGN_32_BIT = 4,
+	ALIGN_64_BIT = 8
+};
+
 typedef struct _map_info {
 	void *map_base;
 	int map_size;
@@ -24,14 +34,17 @@ int pcimem_map_base(map_info *p_info,
 		    const off_t target,
 		    const int type_width);
 
-uint64_t pcimem_read(const map_info *p_info,
-		     const off_t target,
-		     const int type_width);
+int pcimem_read(const map_info *p_info,
+		const off_t target,
+		const int d_size,
+		void *p_data,
+		const int type_width);
 
-uint64_t pcimem_write(const map_info *p_info,
-		      const off_t target,
-		      const uint64_t write_val,
-		      const int type_width);
+int pcimem_write(const map_info *p_info,
+		 const off_t target,
+		 const int d_size,
+		 void *p_data,
+		 const int type_width);
 
 int pcimem_deinit(map_info *p_info,
 		  int *pfd);
