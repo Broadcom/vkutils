@@ -103,6 +103,11 @@ enum arg_index {
 			ARG_PARAM1 + 1)
 };
 
+enum scmd_index {
+	SC_BAR = ARG_PARAM1 - ARG_CMD,
+	SC_OFFSET
+};
+
 /* supported command IDs */
 enum cmd_list {
 	CMD_FIRST,		/* 0 - reserved ID */
@@ -202,16 +207,41 @@ static struct cmd_unit cmd_lookup_tbl[] = {
 static char cmd_param_tbl[MAX_SUB_CMDS][FNAME_LEN];
 
 /* function prototypes */
-static int cmd_get_class(int scmds_cnt);
+static int cmd_get_class(int scmds_cnt, enum cmd_class *cclass);
 static int cmd_node_lookup(int node,
 			   int resource,
 			   enum cmd_mode mode,
 			   enum cmd_list cmd_id,
 			   char *dev_node,
 			   int *f_id);
-static int cmd_lookup(enum cmd_class class);
+static int cmd_lookup(enum cmd_class cclass, enum cmd_list *ci);
+static int find_size(char *f_name, unsigned int *size);
 
-/* strtoul wrapper function for unified error handling */
+static void print_usage(void)
+{
+	printf("Usage: vkcli <node_num> <args...>\n");
+	printf("node_num: 0..11\n");
+	printf("Available arguments:\n");
+	printf("\tli: load image\n");
+	printf("\t\t[-/boot1/boot2]\n");
+	printf("\t\t\t'-' load both stages (both boot1 and boot2)\n");
+	printf("\t\t\t'boot1' -- only first stage (boot1)\n");
+	printf("\t\t\t'boot2' -- only second stage (boot2)\n");
+	printf("\trb: read bar <barno> <offset>\n");
+	printf("\trf: read to file <barno> <offset> <len> file\n");
+	printf("\twb: write bar <barno> <offset> <value>\n");
+	printf("\twf: write from file <barno> <offset> file\n");
+	printf("\treset: issue reset command\n");
+}
+
+/**
+ * @brief string2ul strtoul wrapper function
+ *
+ * @param[in] str string to convert
+ * @param[out] return_value value
+ *
+ * @return STATUS_OK on success, error code otherwise
+ */
 static int string2ul(char *str, unsigned long *return_value)
 {
 	char *endptr = NULL;
@@ -228,6 +258,60 @@ static int string2ul(char *str, unsigned long *return_value)
 	return STATUS_OK;
 }
 
+/**
+ * @brief find_size determines file size
+ *
+ * @param[in] f_name path/file name
+ * @param[out] size file size
+ *
+ * @return STATUS_OK on success, error code otherwise
+ */
+static int find_size(char *f_name, unsigned int *size)
+{
+	char e_msg[MAX_ERR_MSG] = "";
+	FILE *fp = NULL;
+	int ret = -EINVAL;
+
+	if (size != NULL)
+		*size = 0;
+	else
+		return -EINVAL;
+	fp = fopen(f_name, "r");
+	if (fp == NULL) {
+		PERROR("File: %s Not Found!\n", f_name);
+		return -EINVAL;
+	}
+	ret = fseek(fp, 0L, SEEK_END);
+	if (ret < 0) {
+		PERROR("I/O error on file: %s, err %x\n",
+		       f_name,
+		       errno);
+	} else {
+		ret = ftell(fp);
+		if (ret > 0)
+			*size = ret;
+		else
+			PERROR("I/O error on file: %s, err %x\n",
+			       f_name,
+			       errno);
+	}
+	ret = (ret > 0) ? STATUS_OK : ret;
+	fclose(fp);
+	return ret;
+}
+
+/**
+ * @brief cmd_node_lookup construct sys path and use it according to mode
+ *
+ * @param[in] node device instance
+ * @param[in] resource endpoint for enumerating devices i.e bar for pcie
+ * @param[in] mode - perform open action or just verify it exists
+ * @param[in] cmd_id - command to apply on device / endpoint
+ * @param[in/out] dev_node - user requested sys path / open real path
+ * @param[out] f_id - file descriptor, when open is performed
+ *
+ * @return STATUS_OK on success, file errno code otherwise
+ */
 static int cmd_node_lookup(int node,
 			   int resource,
 			   enum cmd_mode mode,
@@ -291,27 +375,20 @@ static int cmd_node_lookup(int node,
 	return STATUS_OK;
 }
 
-static void print_usage(void)
-{
-	printf("Usage: vkcli <node_num> <args...>\n");
-	printf("node_num: 0..11\n");
-	printf("Available arguments:\n");
-	printf("\tli: load image\n");
-	printf("\t\t[-/boot1/boot2]\n");
-	printf("\t\t\t'-' load both stages (both boot1 and boot2)\n");
-	printf("\t\t\t'boot1' -- only first stage (boot1)\n");
-	printf("\t\t\t'boot2' -- only second stage (boot2)\n");
-	printf("\trb: read bar <barno> <offset>\n");
-	printf("\trf: read to file <barno> <offset> <len> file\n");
-	printf("\twb: write bar <barno> <offset> <value>\n");
-	printf("\twf: write from file <barno> <offset> file\n");
-	printf("\treset: issue reset command\n");
-}
-
+/**
+ * @brief is_valid_cmd analyze / validate command line
+ *
+ * @param[in] cmd_cnt alias for argc
+ * @param[in] scmd_cnt sub-command number of arguments
+ * @param[in] cmd_line alias for argv
+ * @param[out] node device instance
+ *
+ * @return STATUS_OK on success, error code otherwise
+ */
 static int is_valid_cmd(int cmd_cnt,
 			int scmd_cnt,
-			char *argv[],
-			enum cmd_node *node_id)
+			char *cmd_line[],
+			enum cmd_node *node)
 {
 	char e_msg[MAX_ERR_MSG] = "";
 	char *str = NULL;
@@ -319,17 +396,17 @@ static int is_valid_cmd(int cmd_cnt,
 	int i, ret = -EINVAL;
 	int value;
 
-	*node_id = ND_INVALID;
+	*node = ND_INVALID;
 	if (cmd_cnt <= ARG_NODE)
 		return STATUS_OK;
-	str = argv[ARG_NODE];
+	str = cmd_line[ARG_NODE];
 	if (str == NULL)
 		return -EINVAL;
 	if (strcmp(str, "--help") == 0)
 		return STATUS_OK;
 	if (scmd_cnt >= MAX_SUB_CMDS) {
 		PERROR("%s: Invalid parameter nr: %d\n",
-		       argv[ARG_CMD],
+		       cmd_line[ARG_CMD],
 		       scmd_cnt);
 		print_usage();
 		return -EINVAL;
@@ -337,7 +414,7 @@ static int is_valid_cmd(int cmd_cnt,
 	/* mirror command line in our cmd_param_tbl */
 	for (i = 0; i <  cmd_cnt; i++) {
 		strncpy(cmd_param_tbl[i],
-			argv[i],
+			cmd_line[i],
 			sizeof(cmd_param_tbl[0]));
 		cmd_param_tbl[i][sizeof(cmd_param_tbl[0]) - 1] = '\0';
 	}
@@ -369,58 +446,95 @@ static int is_valid_cmd(int cmd_cnt,
 	if (ret == STATUS_OK &&
 	    value >= 0 &&
 	    value < MAX_CARDS_PER_HOST) {
-		*node_id = value;
+		*node = value;
 		return STATUS_OK;
 	}
 	return -EINVAL;
 }
 
-static int cmd_get_class(int scmds_cnt)
+/**
+ * @brief cmd_get_class returns the command class when valid
+ * for processing convenince commands are grouped in classes
+ *
+ * @param[in] scmd_cnt sub-command number of arguments
+ * @param[out] cclass command class
+ *
+ * @return STATUS_OK on success, error code otherwise
+ */
+static int cmd_get_class(int scmds_cnt, enum cmd_class *cclass)
 {
 	char e_msg[MAX_ERR_MSG] = "";
 	enum cmd_list i = 0;
+	int ret = -EINVAL;
+	struct cmd_unit *ucmd;
 
-	for (i = CMD_FIRST; i < CMD_LAST; i++) {
-		if (strcmp(cmd_param_tbl[ARG_CMD],
-			   cmd_lookup_tbl[i].cmd_name) == 0) {
-			if (scmds_cnt <
-			    cmd_lookup_tbl[i].cmd_attrib->min_params ||
-			    scmds_cnt >
-			    cmd_lookup_tbl[i].cmd_attrib->max_params) {
-				PERROR("%s: Invalid parameter nr: %d\n",
-				       cmd_param_tbl[ARG_CMD],
-				       scmds_cnt);
-				return -EINVAL;
+	if (cclass != NULL)
+		for (i = CMD_FIRST; i < CMD_LAST; i++) {
+			ucmd = &cmd_lookup_tbl[i];
+			if (strcmp(cmd_param_tbl[ARG_CMD],
+				   ucmd->cmd_name) == 0) {
+				*cclass = ucmd->cmd_attrib->class;
+				if (scmds_cnt < ucmd->cmd_attrib->min_params ||
+				    scmds_cnt > ucmd->cmd_attrib->max_params)
+					PERROR("%s: Bad parameter nr: %d\n",
+					       cmd_param_tbl[ARG_CMD],
+					       scmds_cnt);
+				else
+					ret = STATUS_OK;
 			}
-			return cmd_lookup_tbl[i].cmd_attrib->class;
 		}
-	}
-	return -EINVAL;
+	return ret;
 }
 
-static int cmd_lookup(enum cmd_class cclass)
+/**
+ * @brief cmd_lookup finds lookup index for current command
+ *
+ * @param[in] cclass command class
+ * @param[out] ci command lookup index
+ *
+ * @return STATUS_OK on success, error code otherwise
+ */
+static int cmd_lookup(enum cmd_class cclass, enum cmd_list *ci)
 {
 	char e_msg[MAX_ERR_MSG] = "";
 	enum cmd_list i;
+	int ret = -EINVAL;
 	char *str;
+	struct cmd_unit *ucmd;
 
-	str = cmd_param_tbl[ARG_CMD];
-	for (i = CMD_FIRST + 1; i < CMD_LAST; i++)
-		if (cmd_lookup_tbl[i].cmd_attrib->class == cclass &&
-		    strcmp(str, cmd_lookup_tbl[i].cmd_name) == 0)
-			break;
-	if (i == CMD_LAST) {
-		PERROR("bad cmd %s for class: %d\n",
-		       str,
-		       cclass);
-		print_usage();
-		return -EINVAL;
+	if (ci != NULL) {
+		str = cmd_param_tbl[ARG_CMD];
+		for (i = CMD_FIRST + 1; i < CMD_LAST; i++) {
+			ucmd = &cmd_lookup_tbl[i];
+			if (ucmd->cmd_attrib->class == cclass &&
+			    strcmp(str, ucmd->cmd_name) == 0)
+				break;
+		}
+		if (i == CMD_LAST) {
+			PERROR("bad cmd %s for class: %d\n",
+			       str,
+			       cclass);
+			print_usage();
+		} else {
+			*ci = i;
+			ret = STATUS_OK;
+		}
 	}
-	return i;
+	return ret;
 }
 
+/**
+ * @brief scmd_get_param retrieves / converts sub-command parameters
+ *
+ * @param[in] cmd_cnt alias for argc
+ * @param[in] cmd_idx command index
+ * @param[out] scmd_idx pointer to array of sub_command values
+ * @param[out] scmd_cnt sub-command number of identified parameters
+ *
+ * @return STATUS_OK on success, error code otherwise
+ */
 static int scmd_get_param(int cmd_cnt,
-			  enum cmd_list c_id,
+			  enum cmd_list cmd_idx,
 			  int *scmd_idx,
 			  int *scmd_cnt)
 {
@@ -435,7 +549,7 @@ static int scmd_get_param(int cmd_cnt,
 
 	*scmd_idx = 0;
 	*scmd_cnt = 0;
-	ca = cmd_lookup_tbl[c_id].cmd_attrib;
+	ca = cmd_lookup_tbl[cmd_idx].cmd_attrib;
 	scmds = cmd_cnt - ARG_PARAM1;
 	cclass = ca->class;
 	switch (cclass) {
@@ -468,7 +582,7 @@ static int scmd_get_param(int cmd_cnt,
 			ret = string2ul(cmd_param_tbl[idx],
 					(unsigned long *)&value);
 			if (ret == STATUS_OK) {
-				scmd_idx[count] = value;
+				scmd_idx[count + SC_BAR] = value;
 				count++;
 			} else {
 				continue;
@@ -486,10 +600,21 @@ static int scmd_get_param(int cmd_cnt,
 	return STATUS_OK;
 }
 
+/**
+ * @brief cmd_li command handler for load image sub-command
+ *
+ * @param[in] fd - device file descriptor
+ * @param[in] cmd_idx command index
+ * @param[in] scmd_idx pointer to array of sub_command values
+ * @param[in] scmd_cnt number of values in the sub-command array
+ * @param[in] path dev_node remapped path (may differ from user path)
+ *
+ * @return STATUS_OK on success, error code otherwise
+ */
 static int cmd_li(int fd,
 		  int cmd_idx,
 		  int *scmd_idx,
-		  int cnt,
+		  int scmd_cnt,
 		  char *path)
 {
 	int arg_idx, rc;
@@ -546,10 +671,21 @@ static int cmd_li(int fd,
 	return STATUS_OK;
 }
 
+/**
+ * @brief cmd_res command handler for reset sub-command
+ *
+ * @param[in] fd - device file descriptor
+ * @param[in] cmd_idx command index
+ * @param[in] scmd_idx pointer to array of sub_command values
+ * @param[in] scmd_cnt number of values in the sub-command array
+ * @param[in] path dev_node remapped path (may differ from user path)
+ *
+ * @return STATUS_OK on success, error code otherwise
+ */
 static int cmd_res(int fd,
 		   int cmd_idx,
 		   int *scmd_idx,
-		   int cnt,
+		   int scmd_cnt,
 		   char *path)
 {
 	char e_msg[MAX_ERR_MSG] = "";
@@ -565,7 +701,7 @@ static int cmd_res(int fd,
 
 	/* only sypport reset at this time */
 	if (strcmp("reset", cmd_lookup_tbl[cmd_idx].cmd_name) != 0 ||
-	    cnt > 0) {
+	    scmd_cnt > 0) {
 		PERROR("Unsupported control command %s\n",
 		       cmd_lookup_tbl[cmd_idx].cmd_name);
 		return -EINVAL;
@@ -579,75 +715,199 @@ static int cmd_res(int fd,
 	return STATUS_OK;
 }
 
+/**
+ * @brief cmd_io command handler for io access sub-commands: rb, wb, rf, wf
+ *
+ * @param[in] fd - device file descriptor
+ * @param[in] cmd_idx command index
+ * @param[in] scmd_idx pointer to array of sub_command values
+ * @param[in] scmd_cnt number of values in the sub-command array
+ * @param[in] path dev_node remapped path (may differ from user path)
+ *
+ * @return STATUS_OK on success, error code otherwise
+ */
 static int cmd_io(int fd,
 		  int cmd_idx,
 		  int *scmd_idx,
 		  int scmd_cnt,
 		  char *path)
 {
-	int data[MAX_SUB_CMDS];
+	/* default: 32 bit align */
+	int align = ALIGN_32_BIT;
 	char e_msg[MAX_ERR_MSG] = "";
 	int fnode = 0;
-	map_info lmap_info = { NULL, 4096 };
+	int *io_data = NULL;
+	int io_file = 0;
+	unsigned int len = 0;
+	int li = 0;
+	struct map_info lmap_info = { NULL, 4096 };
 	unsigned long long offset;
-	int rc, ret = -EINVAL;
-	int length = 0;
+	int rc, ret = -EINVAL, sys_ps = 0;
+	struct cmd_unit *ucmd;
 
+	ucmd = &cmd_lookup_tbl[cmd_idx];
 	if (scmd_cnt < 2) {
 		PERROR("%s: invalid io read command; cnt=%d\n",
-		       cmd_lookup_tbl[cmd_idx].cmd_name,
+		       ucmd->cmd_name,
 		       scmd_cnt);
 		ret = -EINVAL;
 	} else {
-		/* by convention.. */
-		offset = scmd_idx[1];
+		offset = scmd_idx[SC_OFFSET];
 		pcimem_init(path,
 			    &lmap_info,
 			    &fnode);
-		pcimem_map_base(&lmap_info,
-				fnode,
-				offset,
-				ALIGN_32_BIT);
+		sys_ps = lmap_info.map_size;
+		/* default: word access - same as align */
+		len = align;
+		if (ucmd->cmd_attrib->class == IO_AXS_CMDS)
+			pcimem_map_base(&lmap_info,
+					fnode,
+					offset,
+					align);
 		switch (cmd_idx) {
 		case CMD_READ_BIN:
-			length = 1;
-			/* intentional fallthrough */
-		case CMD_READ_FILE:
-			rc = (int)pcimem_read(&lmap_info,
-						   offset,
-						   length,
-						   data,
-						   ALIGN_32_BIT);
+			/* pcimem api allows accessing multiple locations */
+			/* vkcli supports one location only for now */
+			io_data = malloc(len);
+			if (io_data == NULL)
+				return -EINVAL;
+			rc = pcimem_read(&lmap_info,
+					 offset,
+					 len,
+					 io_data,
+					 align);
 			if (rc >= 0) {
 				ret = STATUS_OK;
 				fprintf(stdout,
 					"0x%04llX: 0x%0*X\n",
 					offset,
-					2 * ALIGN_32_BIT,
-					data[0]);
+					2 * align,
+					*io_data);
+			}
+			break;
+		case CMD_READ_FILE:
+			/* by convention.. second to last is length */
+			len = scmd_idx[scmd_cnt - 1];
+			io_data = malloc(len);
+			if (io_data == NULL)
+				return -EINVAL;
+			lmap_info.map_size = PAGE_RNDUP(len, sys_ps);
+			pcimem_map_base(&lmap_info,
+					fnode,
+					offset,
+					align);
+			rc = pcimem_blk_read(&lmap_info,
+					     offset,
+					     len,
+					     io_data,
+					     align);
+			if (rc >= 0) {
+				li = ARG_CMD + scmd_cnt;
+				rc = open(cmd_param_tbl[li],
+					  O_CREAT |
+					  O_SYNC  |
+					  O_TRUNC |
+					  O_WRONLY,
+					  S_IRUSR |
+					  S_IWUSR |
+					  S_IRGRP |
+					  S_IROTH);
+				io_file = rc;
+				if (rc <= 0) {
+					PERROR("Fail to open %s\n",
+					       cmd_param_tbl[li]);
+					ret = errno;
+				} else {
+					rc = write(io_file,
+						   io_data,
+						   len);
+				}
+				if (rc < 0) {
+					PERROR("IO file %s err: %d\n",
+					       cmd_param_tbl[li],
+					       errno);
+					ret = errno;
+				} else {
+					ret = STATUS_OK;
+				}
+				if (io_file >= 0)
+					close(io_file);
+			} else {
+				PERROR("Read file %s err: %d\n",
+				       cmd_param_tbl[li], rc);
 			}
 			break;
 		case CMD_WRITE_BIN:
-			length = 1;
-			/* by convention.. */
-			data[0] = scmd_idx[2];
-			/* intentional fallthrough */
-		case CMD_WRITE_FILE:
-			rc = (int)pcimem_write(&lmap_info,
-					       offset,
-					       length,
-					       data,
-					       ALIGN_32_BIT);
+			/* pcimem api allows accessing multiple locations */
+			/* vkcli supports one location only for now */
+			io_data = malloc(len);
+			if (io_data == NULL)
+				return -EINVAL;
+			*io_data = scmd_idx[SC_OFFSET + 1];
+			rc = pcimem_write(&lmap_info,
+					  offset,
+					  len,
+					  io_data,
+					  align);
 			if (rc < 0) {
 				PERROR("%s: bad io write; err=0x%x\n",
-				       cmd_lookup_tbl[cmd_idx].cmd_name,
+				       ucmd->cmd_name,
 				       rc);
 				ret = rc;
 			} else {
 				ret = STATUS_OK;
 			}
 			break;
+		case CMD_WRITE_FILE:
+			li = ARG_CMD + scmd_cnt;
+			ret = find_size(cmd_param_tbl[li], &len);
+			if (ret != STATUS_OK)
+				return -EINVAL;
+			io_data = malloc(len);
+			if (io_data == NULL)
+				return -EINVAL;
+			rc = open(cmd_param_tbl[li],
+				  O_RDONLY);
+			io_file = rc;
+			if (rc <= 0) {
+				PERROR("Fail to open %s\n",
+				       cmd_param_tbl[li]);
+				ret = errno;
+			} else {
+				rc = read(io_file, io_data, len);
+			}
+			if (rc < 0) {
+				PERROR("IO file %s err: %d\n",
+				       cmd_param_tbl[li],
+				       errno);
+				ret = errno;
+			} else {
+				len = rc;
+				lmap_info.map_size = PAGE_RNDUP(len, sys_ps);
+				pcimem_map_base(&lmap_info,
+						fnode,
+						offset,
+						align);
+				rc = pcimem_blk_write(&lmap_info,
+						      offset,
+						      len,
+						      io_data,
+						      align);
+				if (rc < 0) {
+					PERROR("%s: bad io write; err=0x%x\n",
+					       ucmd->cmd_name,
+					       rc);
+					ret = rc;
+				} else {
+					ret = STATUS_OK;
+				}
+			}
+			if (io_file >= 0)
+				close(io_file);
+			break;
 		}
+		if (io_data != NULL)
+			free(io_data);
 		fprintf(stdout, "\taccess bar done\n");
 		fflush(stdout);
 		pcimem_deinit(&lmap_info,
@@ -656,9 +916,21 @@ static int cmd_io(int fd,
 	return ret;
 }
 
+/**
+ * @brief handle_cmd_apply opens the device and calls sub-command handler
+ *
+ * @param[in] node device instance
+ * @param[in] resource endpoint for enumerating devices i.e bar for pcie
+ * @param[in] cmd_idx command index
+ * @param[out] scmd_idx pointer to array of sub_command values
+ * @param[in] scmd_cnt sub-command number of arguments
+ * @param[in] path dev_node remapped path (may differ from user path)
+ *
+ * @return STATUS_OK on success, error code otherwise
+ */
 static int handle_cmd_apply(enum cmd_node node,
 			    int resource,
-			    enum cmd_list c_id,
+			    enum cmd_list cmd_idx,
 			    int *scmd_idx,
 			    int scmd_cnt,
 			    char *path)
@@ -670,21 +942,21 @@ static int handle_cmd_apply(enum cmd_node node,
 	rc = cmd_node_lookup(node,
 			     resource,
 			     CMD_MODE_EXEC,
-			     c_id,
+			     cmd_idx,
 			     path, &fd);
 	if (rc < 0) {
 		PERROR("error in node access %s; err=0x%x",
 		       path, rc);
 		return rc;
 	}
-	rc = cmd_lookup_tbl[c_id].cmd_apply(fd,
-					    c_id,
-					    scmd_idx,
-					    scmd_cnt,
-					    path);
+	rc = cmd_lookup_tbl[cmd_idx].cmd_apply(fd,
+					       cmd_idx,
+					       scmd_idx,
+					       scmd_cnt,
+					       path);
 	if (rc < 0) {
 		PERROR("error in apply cmd %d; err=0x%x",
-		       c_id, rc);
+		       cmd_idx, rc);
 		return rc;
 	}
 
@@ -692,11 +964,21 @@ static int handle_cmd_apply(enum cmd_node node,
 	return STATUS_OK;
 }
 
+/**
+ * @brief cmd_handler main processing function
+ *
+ * @param[in] cmd_cnt alias for argc
+ * @param[in] scmd_cnt sub-command number of arguments
+ * @param[in] fnode identified in the input command line
+ *
+ * @return STATUS_OK on success, error code otherwise
+ */
 static int  cmd_handler(int cmd_cnt,
 			int scmd_cnt,
 			int fnode)
 {
 	enum cmd_class cmdc;
+	enum cmd_list cmd_idx = 0;
 	int data[MAX_SUB_CMDS];
 	char device_path[MAX_SYS_PATH] = "";
 	char e_msg[MAX_ERR_MSG] = "";
@@ -708,35 +990,42 @@ static int  cmd_handler(int cmd_cnt,
 		print_usage();
 		return STATUS_OK;
 	}
-	cmdc = cmd_get_class(scmd_cnt);
-	rc = cmd_lookup(cmdc);
+	memset(data, 0, sizeof(data));
+	rc = cmd_get_class(scmd_cnt, &cmdc);
+	if (rc < 0) {
+		PERROR("%s: bad command for class %d; err=0x%x",
+		       cmd_param_tbl[ARG_CMD],
+		       cmdc,
+		       rc);
+		return ret;
+	}
+	rc = cmd_lookup(cmdc, &cmd_idx);
 	if (rc < 0) {
 		PERROR("%s: bad command; err=0x%x",
 		       cmd_param_tbl[ARG_CMD],
 		       rc);
 		ret = rc;
 	} else {
-		enum cmd_list c_id = rc;
 		enum cmd_node n_id = rc;
 
-		n_id = cmd_lookup_tbl[c_id].cmd_node;
+		n_id = cmd_lookup_tbl[cmd_idx].cmd_node;
 		if (n_id == ND_HELP) {
 			print_usage();
 			return STATUS_OK;
 		}
 		rc = scmd_get_param(cmd_cnt,
-				    c_id,
+				    cmd_idx,
 				    data,
 				    &scmds_found);
 		if (rc == STATUS_OK) {
-			int res = 0;
+			int bar = 0;
 
-			res = (cmdc & (IO_AXS_CMDS | FIO_AXS_CMDS)) ?
-					data[0] : 0;
+			bar = (cmdc & (IO_AXS_CMDS | FIO_AXS_CMDS)) ?
+					data[SC_BAR] * 2 : 0;
 			rc = cmd_node_lookup(fnode,
-					     res,
+					     bar,
 					     CMD_MODE_VERIFY,
-					     c_id,
+					     cmd_idx,
 					     device_path,
 					     NULL);
 			if (rc < 0) {
@@ -747,15 +1036,15 @@ static int  cmd_handler(int cmd_cnt,
 				ret = rc;
 			} else {
 				ret =  handle_cmd_apply(fnode,
-							res,
-							c_id,
+							bar,
+							cmd_idx,
 							data,
 							scmds_found,
 							device_path);
 			}
 		} else {
 			PERROR("bad command; %d %s err=0x%x",
-			       c_id,
+			       cmd_idx,
 			       device_path,
 			       errno);
 			ret = errno;
@@ -766,6 +1055,9 @@ static int  cmd_handler(int cmd_cnt,
 	return ret;
 }
 
+/**
+ * @brief main standard entry point
+ */
 int main(int argc,
 	 char *argv[])
 {
