@@ -134,7 +134,8 @@ enum cmd_node {
 	ND_BCM,
 	ND_SYS,
 	ND_HELP,
-	ND_LAST
+	ND_LAST,
+	ND_INVALID = 0xFFFFFFFF
 };
 
 /* command description structure: */
@@ -318,8 +319,8 @@ static int is_valid_cmd(int cmd_cnt,
 	int i, ret = -EINVAL;
 	int value;
 
-	*node_id = ND_HELP;
-	if (cmd_cnt < ARG_NODE)
+	*node_id = ND_INVALID;
+	if (cmd_cnt <= ARG_NODE)
 		return STATUS_OK;
 	str = argv[ARG_NODE];
 	if (str == NULL)
@@ -481,7 +482,7 @@ static int scmd_get_param(int cmd_cnt,
 	case MAX_CMDS:
 	default:
 		break;
-	};
+	}
 	return STATUS_OK;
 }
 
@@ -525,7 +526,7 @@ static int cmd_li(int fd,
 		break;
 	default:
 		return -EINVAL;
-	};
+	}
 	for (arg_idx = start_idx; arg_idx < end_idx + 1; arg_idx++) {
 		int nr_elem = ARRAY_SIZE(image);
 
@@ -646,7 +647,7 @@ static int cmd_io(int fd,
 				ret = STATUS_OK;
 			}
 			break;
-		};
+		}
 		fprintf(stdout, "\taccess bar done\n");
 		fflush(stdout);
 		pcimem_deinit(&lmap_info,
@@ -703,7 +704,7 @@ static int  cmd_handler(int cmd_cnt,
 	int ret = -EINVAL;
 	int scmds_found = 0;
 
-	if (fnode == ND_HELP) {
+	if (fnode == ND_INVALID) {
 		print_usage();
 		return STATUS_OK;
 	}
@@ -716,7 +717,13 @@ static int  cmd_handler(int cmd_cnt,
 		ret = rc;
 	} else {
 		enum cmd_list c_id = rc;
+		enum cmd_node n_id = rc;
 
+		n_id = cmd_lookup_tbl[c_id].cmd_node;
+		if (n_id == ND_HELP) {
+			print_usage();
+			return STATUS_OK;
+		}
 		rc = scmd_get_param(cmd_cnt,
 				    c_id,
 				    data,
