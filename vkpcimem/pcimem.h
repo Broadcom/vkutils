@@ -10,7 +10,9 @@
 #include <stdint.h>
 #include <sys/types.h>
 
-#define STATUS_OK	0
+#define STATUS_OK		0
+
+#define PAGE_RNDUP(x, s)	(((x) + (s) - 1) & ~((s) - 1))
 
 /* transaction width - future use - all is 32 bit for now */
 enum bit_align {
@@ -20,33 +22,45 @@ enum bit_align {
 	ALIGN_64_BIT = 8
 };
 
-typedef struct _map_info {
+struct map_info {
 	void *map_base;
-	int map_size;
-} map_info;
+	uint64_t map_size;
+};
 
 int pcimem_init(const char *device_name,
-		map_info *p_info,
+		struct map_info *p_info,
 		int *pfd);
 
-int pcimem_map_base(map_info *p_info,
+int pcimem_map_base(struct map_info *p_info,
 		    const int fd,
 		    const off_t target,
 		    const int type_width);
 
-int pcimem_read(const map_info *p_info,
+int pcimem_blk_read(const struct map_info *p_info,
+		    const off_t target,
+		    const int d_size,
+		    void *p_data,
+		    const int type_width);
+
+int pcimem_blk_write(const struct map_info *p_info,
+		     const off_t target,
+		     const int d_size,
+		     void *p_data,
+		     const int type_width);
+
+int pcimem_read(const struct map_info *p_info,
 		const off_t target,
 		const int d_size,
 		void *p_data,
 		const int type_width);
 
-int pcimem_write(const map_info *p_info,
+int pcimem_write(const struct map_info *p_info,
 		 const off_t target,
 		 const int d_size,
 		 void *p_data,
 		 const int type_width);
 
-int pcimem_deinit(map_info *p_info,
+int pcimem_deinit(struct map_info *p_info,
 		  int *pfd);
 
 #endif /* PCIMEM_API_H */
