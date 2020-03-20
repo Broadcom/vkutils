@@ -33,5 +33,5 @@ AC_SUBST([AM_CFLAGS])
 #Initialize Libtool
 LT_INIT([shared])
 
-AC_CONFIG_FILES([Makefile])
+AC_CONFIG_FILES([Makefile pcimem.pc])
 AC_OUTPUT

@@ -12,6 +12,7 @@ AC_PROG_CC
 AC_PROG_INSTALL
 AC_PROG_MAKE_SET
 AM_CFLAGS="-Wall -Werror -O2 -Wmissing-prototypes -Wstrict-prototypes -std=gnu89 -Wdeclaration-after-statement"
+PKG_CHECK_MODULES([pcimem], [pcimem])
 AC_SUBST([AM_CFLAGS])
 # Checks for libraries.
 AC_SEARCH_LIBS([pcimem_init], [pcimem], [], [
