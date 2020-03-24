@@ -753,9 +753,14 @@ static int cmd_io(int fd,
 		ret = -EINVAL;
 	} else {
 		offset = scmd_idx[SC_OFFSET];
-		pcimem_init(path,
-			    &lmap_info,
-			    &fnode);
+		rc = pcimem_init(path,
+				 &lmap_info,
+				 &fnode);
+		if (rc < 0) {
+			PERROR("Fail to init pcimem for %s\n",
+			       path);
+			return rc;
+		}
 		sys_ps = lmap_info.map_size;
 		/* default: word access - same as align */
 		len = align;
