@@ -368,14 +368,13 @@ static int cmd_node_lookup(int node,
 				if (fd < 0) {
 					PERROR("%s open failed; err=0x%x",
 					       device_node, errno);
-					return errno;
+					return -errno;
 				}
 			}
 		}
 		if (f_id != NULL && class == CTRL_CMDS)
 			*f_id = fd;
-		fprintf(stdout, "Open %s\n", device_node);
-		fflush(stdout);
+		FPR_FN("Open %s\n", device_node);
 	}
 	if (mode != CMD_MODE_VERIFY)
 		strncpy(dev_node, device_node, MAX_SYS_PATH);
@@ -642,10 +641,7 @@ static int cmd_li(int fd,
 	size_t size;
 
 	ucmd = &cmd_lookup_tbl[cmd_idx];
-	fprintf(stdout,
-		"Issue command %s\n", ucmd->cmd_name);
-	fflush(stdout);
-
+	FPR_FN("Issue command %s\n", ucmd->cmd_name);
 	/* only support li at this time */
 	if (strcmp("li", ucmd->cmd_name) != 0) {
 		PERROR("Unsupported load command %s\n",
@@ -734,10 +730,8 @@ static int cmd_res(int fd,
 
 	reset.arg1 = 0;
 	reset.arg2 = 0;
-	fprintf(stdout,
-		"Issue command %s\n",
-		cmd_lookup_tbl[cmd_idx].cmd_name);
-	fflush(stdout);
+	FPR_FN("Issue command %s\n",
+	       cmd_lookup_tbl[cmd_idx].cmd_name);
 
 	/* only sypport reset at this time */
 	if (strcmp("reset", cmd_lookup_tbl[cmd_idx].cmd_name) != 0 ||
@@ -781,8 +775,8 @@ static int cmd_io(int fd,
 	unsigned int len = 0;
 	int li = 0;
 	struct map_info lmap_info = { NULL, 4096 };
-	unsigned long long offset;
-	int rc, ret = -EINVAL, sys_ps = 0;
+	off_t offset;
+	int ret = -EINVAL, sys_ps = 0;
 	struct cmd_unit *ucmd;
 
 	ucmd = &cmd_lookup_tbl[cmd_idx];
@@ -793,114 +787,121 @@ static int cmd_io(int fd,
 		ret = -EINVAL;
 	} else {
 		offset = scmd_idx[SC_OFFSET];
-		rc = pcimem_init(path,
-				 &lmap_info,
-				 &fnode);
-		if (rc < 0) {
-			PERROR("Fail to init pcimem for %s\n",
-			       path);
-			return rc;
+		ret = pcimem_init(path,
+				  &lmap_info,
+				  &fnode);
+		if (ret < 0) {
+			PERROR("Fail to init pcimem for %s err: %d\n",
+			       path,
+			       ret);
+			return ret;
 		}
 		sys_ps = lmap_info.map_size;
 		/* default: word access - same as align */
 		len = align;
-		if (ucmd->cmd_attrib->class == IO_AXS_CMDS)
-			pcimem_map_base(&lmap_info,
-					fnode,
-					offset,
-					align);
+		if (ucmd->cmd_attrib->class == IO_AXS_CMDS) {
+			ret = pcimem_map_base(&lmap_info,
+					      fnode,
+					      offset,
+					      align);
+			if (ret < 0) {
+				PERROR("Err mem map for %s\n",
+				       path);
+				return ret;
+			}
+		}
 		switch (cmd_idx) {
 		case CMD_READ_BIN:
 			/* pcimem api allows accessing multiple locations */
 			/* vkcli supports one location only for now */
 			io_data = malloc(len);
-			if (io_data == NULL)
-				return -EINVAL;
-			rc = pcimem_read(&lmap_info,
-					 offset,
-					 len,
-					 io_data,
-					 align);
-			if (rc >= 0) {
-				ret = STATUS_OK;
-				fprintf(stdout,
-					"0x%04llX: 0x%0*X\n",
-					offset,
-					2 * align,
-					*io_data);
+			if (io_data) {
+				ret = pcimem_read(&lmap_info,
+						  0,
+						  len,
+						  io_data,
+						  align);
+				if (ret < 0)
+					PERROR("%s: bad rd; err=0x%x\n",
+					       ucmd->cmd_name,
+					       ret);
+				else
+					FPR_FN("0x%04lX: 0x%0*X\n",
+					       offset,
+					       2 * align,
+					       *io_data);
 			}
 			break;
 		case CMD_READ_FILE:
 			/* by convention.. second to last is length */
 			len = scmd_idx[scmd_cnt - 1];
 			io_data = malloc(len);
-			if (io_data == NULL)
-				return -EINVAL;
-			lmap_info.map_size = PAGE_RNDUP(len, sys_ps);
-			pcimem_map_base(&lmap_info,
-					fnode,
-					offset,
-					align);
-			rc = pcimem_blk_read(&lmap_info,
-					     offset,
-					     len,
-					     io_data,
-					     align);
-			if (rc >= 0) {
-				li = ARG_CMD + scmd_cnt;
-				rc = open(cmd_param_tbl[li],
-					  O_CREAT |
-					  O_SYNC  |
-					  O_TRUNC |
-					  O_WRONLY,
-					  S_IRUSR |
-					  S_IWUSR |
-					  S_IRGRP |
-					  S_IROTH);
-				io_file = rc;
-				if (rc <= 0) {
-					PERROR("Fail to open %s\n",
-					       cmd_param_tbl[li]);
-					ret = errno;
+			lmap_info.map_size = len;
+			ret = pcimem_map_base(&lmap_info,
+					      fnode,
+					      offset,
+					      align);
+			if (ret < 0)
+				PERROR("Err mem map for %s\n",
+				       path);
+			if (io_data && ret == STATUS_OK) {
+				ret = pcimem_blk_read(&lmap_info,
+						      0,
+						      len,
+						      io_data,
+						      align);
+				if (ret < 0) {
+					PERROR("%s: bad rd; err=0x%x\n",
+					       ucmd->cmd_name,
+					       ret);
 				} else {
-					rc = write(io_file,
-						   io_data,
-						   len);
+					li = ARG_CMD + scmd_cnt;
+					ret = open(cmd_param_tbl[li],
+						   O_CREAT |
+						   O_SYNC  |
+						   O_TRUNC |
+						   O_WRONLY,
+						   S_IRUSR |
+						   S_IWUSR |
+						   S_IRGRP |
+						   S_IROTH);
+					io_file = ret;
+					if (ret < 0) {
+						PERROR("Fail to open %s\n",
+						       cmd_param_tbl[li]);
+						ret = -errno;
+					} else {
+						ret = write(io_file,
+							    io_data,
+							    len);
+						ret = (ret > 0) ? STATUS_OK :
+								  -errno;
+					}
+					if (ret < 0) {
+						PERROR("IO file %s err: %d\n",
+						       cmd_param_tbl[li],
+						       ret);
+					}
+					if (io_file >= 0)
+						close(io_file);
 				}
-				if (rc < 0) {
-					PERROR("IO file %s err: %d\n",
-					       cmd_param_tbl[li],
-					       errno);
-					ret = errno;
-				} else {
-					ret = STATUS_OK;
-				}
-				if (io_file >= 0)
-					close(io_file);
-			} else {
-				PERROR("Read file %s err: %d\n",
-				       cmd_param_tbl[li], rc);
 			}
 			break;
 		case CMD_WRITE_BIN:
 			/* pcimem api allows accessing multiple locations */
 			/* vkcli supports one location only for now */
 			io_data = malloc(len);
-			if (io_data == NULL)
-				return -EINVAL;
-			*io_data = scmd_idx[SC_OFFSET + 1];
-			rc = pcimem_write(&lmap_info,
-					  offset,
-					  len,
-					  io_data,
-					  align);
-			if (rc < 0) {
-				PERROR("%s: bad io write; err=0x%x\n",
-				       ucmd->cmd_name,
-				       rc);
-				ret = rc;
-			} else {
-				ret = STATUS_OK;
+			if (io_data) {
+				*io_data = scmd_idx[SC_OFFSET + 1];
+				ret = pcimem_write(&lmap_info,
+						   0,
+						   len,
+						   io_data,
+						   align);
+				if (ret < 0)
+					PERROR("%s: bad wr; err=0x%x\n",
+					       ucmd->cmd_name,
+					       ret);
 			}
 			break;
 		case CMD_WRITE_FILE:
@@ -909,54 +910,54 @@ static int cmd_io(int fd,
 			if (ret != STATUS_OK)
 				return -EINVAL;
 			io_data = malloc(len);
-			if (io_data == NULL)
-				return -EINVAL;
-			rc = open(cmd_param_tbl[li],
-				  O_RDONLY);
-			io_file = rc;
-			if (rc <= 0) {
-				PERROR("Fail to open %s\n",
-				       cmd_param_tbl[li]);
-				ret = errno;
-			} else {
-				rc = read(io_file, io_data, len);
-			}
-			if (rc < 0) {
-				PERROR("IO file %s err: %d\n",
-				       cmd_param_tbl[li],
-				       errno);
-				ret = errno;
-			} else {
-				len = rc;
-				lmap_info.map_size = PAGE_RNDUP(len, sys_ps);
-				pcimem_map_base(&lmap_info,
-						fnode,
-						offset,
-						align);
-				rc = pcimem_blk_write(&lmap_info,
-						      offset,
-						      len,
-						      io_data,
-						      align);
-				if (rc < 0) {
-					PERROR("%s: bad io write; err=0x%x\n",
-					       ucmd->cmd_name,
-					       rc);
-					ret = rc;
+			if (io_data) {
+				ret = open(cmd_param_tbl[li],
+					   O_RDONLY);
+				io_file = ret;
+				if (ret < 0) {
+					PERROR("Fail to open %s\n",
+					       cmd_param_tbl[li]);
+					ret = -errno;
 				} else {
-					ret = STATUS_OK;
+					ret = read(io_file, io_data, len);
+					ret = (ret > 0) ? STATUS_OK : -errno;
 				}
+				if (ret < 0) {
+					PERROR("IO file %s err: %d\n",
+					       cmd_param_tbl[li],
+					       ret);
+				} else {
+					len = ret;
+					lmap_info.map_size = len;
+					ret = pcimem_map_base(&lmap_info,
+							      fnode,
+							      offset,
+							      align);
+					if (ret < 0) {
+						PERROR("Err mem map for %s\n",
+						       path);
+					} else {
+						ret =
+						pcimem_blk_write(&lmap_info,
+								 0,
+								 len,
+								 io_data,
+								 align);
+						if (ret < 0)
+							PERROR("%s: blk wr;\n",
+							       ucmd->cmd_name);
+					}
+				}
+				if (io_file >= 0)
+					close(io_file);
 			}
-			if (io_file >= 0)
-				close(io_file);
 			break;
 		}
 		if (io_data != NULL)
 			free(io_data);
-		fprintf(stdout, "\taccess bar done\n");
-		fflush(stdout);
-		pcimem_deinit(&lmap_info,
-			      &fnode);
+		FPR_FN("\taccess bar done\n");
+		ret = pcimem_deinit(&lmap_info,
+				    &fnode);
 	}
 	return ret;
 }
@@ -981,7 +982,7 @@ static int handle_cmd_apply(enum cmd_node node,
 			    char *path)
 {
 	char e_msg[MAX_ERR_MSG] = "";
-	int fd = 0;
+	int fd = -1;
 	int rc;
 
 	rc = cmd_node_lookup(node,
@@ -992,21 +993,20 @@ static int handle_cmd_apply(enum cmd_node node,
 	if (rc < 0) {
 		PERROR("error in node access %s; err=0x%x",
 		       path, rc);
-		return rc;
+	} else {
+		rc = cmd_lookup_tbl[cmd_idx].cmd_apply(fd,
+						       cmd_idx,
+						       scmd_idx,
+						       scmd_cnt,
+						       path);
+		if (rc < 0) {
+			PERROR("error in apply cmd %d; err=0x%x",
+			       cmd_idx, rc);
+		}
 	}
-	rc = cmd_lookup_tbl[cmd_idx].cmd_apply(fd,
-					       cmd_idx,
-					       scmd_idx,
-					       scmd_cnt,
-					       path);
-	if (rc < 0) {
-		PERROR("error in apply cmd %d; err=0x%x",
-		       cmd_idx, rc);
-		return rc;
-	}
-
-	close(fd);
-	return STATUS_OK;
+	if (fd >= 0)
+		close(fd);
+	return rc;
 }
 
 /**
@@ -1090,8 +1090,7 @@ static int  cmd_handler(int cmd_cnt,
 		       device_path,
 		       ret);
 	}
-	fprintf(stdout, "\tcommand done");
-	fflush(stdout);
+	FPR_FN("\tcommand done");
 	return ret;
 }
 
