@@ -40,7 +40,7 @@
  * @param[out] p_info->map_size init the map_size to system PAGE_SIZE
  * @param[out] pfd - pointer to the device file descriptor
  *
- * @return 0 on success, error code otherwise
+ * @return STATUS_OK on success, error code otherwise
  */
 int pcimem_init(const char *device_name, struct map_info *p_info, int *pfd)
 {
@@ -54,7 +54,7 @@ int pcimem_init(const char *device_name, struct map_info *p_info, int *pfd)
 	fflush(stdout);
 	p_info->map_size = sysconf(_SC_PAGE_SIZE);
 
-	return 0;
+	return STATUS_OK;
 }
 
 /**
@@ -66,7 +66,7 @@ int pcimem_init(const char *device_name, struct map_info *p_info, int *pfd)
  * @param[in] target - offset from base to access
  * @param[in] type_width - access width in bytes
  *
- * @return 0 on success, error code otherwise
+ * @return STATUS_OK on success, error code otherwise
  */
 int pcimem_map_base(struct map_info *p_info,
 		    const int fd,
@@ -100,7 +100,7 @@ int pcimem_map_base(struct map_info *p_info,
 	printf("PCI Memory mapped to address 0x%08lx.\n",
 		(unsigned long)p_info->map_base);
 	fflush(stdout);
-	return 0;
+	return STATUS_OK;
 }
 
 /**
@@ -112,7 +112,7 @@ int pcimem_map_base(struct map_info *p_info,
  * @param[in] p_data - data buffer
  * @param[in] type_width - access width in bytes
  *
- * @return 0 on success, error code otherwise
+ * @return STATUS_OK on success, error code otherwise
  */
 int pcimem_read(const struct map_info *p_info,
 		const off_t target,
@@ -153,7 +153,7 @@ int pcimem_read(const struct map_info *p_info,
  * @param[in] p_data - data buffer
  * @param[in] type_width - access width in bytes
  *
- * @return 0 on success, error code otherwise
+ * @return STATUS_OK on success, error code otherwise
  */
 int pcimem_write(const struct map_info *p_info,
 		 const off_t target,
@@ -203,7 +203,7 @@ int pcimem_write(const struct map_info *p_info,
  * @param[in] p_data - data buffer
  * @param[in] type_width - access width in bytes
  *
- * @return 0 on success, error code otherwise
+ * @return STATUS_OK on success, error code otherwise
  */
 int pcimem_blk_read(const struct map_info *p_info,
 		    const off_t target,
@@ -239,7 +239,7 @@ int pcimem_blk_read(const struct map_info *p_info,
  * @param[in] p_data - data buffer
  * @param[in] type_width - access width in bytes
  *
- * @return 0 on success, error code otherwise
+ * @return STATUS_OK on success, error code otherwise
  */
 int pcimem_blk_write(const struct map_info *p_info,
 		     const off_t target,
@@ -275,7 +275,7 @@ int pcimem_blk_write(const struct map_info *p_info,
  * @param[in] p_info->map_size - size of region mapped in user space
  * @param[in/out] pfd - pointer to the device file descriptor
  *
- * @return 0 on success, error code otherwise
+ * @return STATUS_OK on success, error code otherwise
  */
 int pcimem_deinit(struct map_info *p_info, int *pfd)
 {
@@ -285,5 +285,5 @@ int pcimem_deinit(struct map_info *p_info, int *pfd)
 	}
 	p_info->map_base = NULL;
 	close(*pfd);
-	return 0;
+	return STATUS_OK;
 }
