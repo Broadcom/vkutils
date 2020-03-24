@@ -44,16 +44,23 @@
  */
 int pcimem_init(const char *device_name, struct map_info *p_info, int *pfd)
 {
-	*pfd = open(device_name, O_RDWR | O_SYNC);
-	if (*pfd == -1) {
+	int ret = -EINVAL;
+
+	if (!p_info || !p_info->map_base || !pfd) {
 		PRINT_ERROR;
-		return -EINVAL;
+		return ret;
 	}
-	printf("%s opened.\n", device_name);
-	printf("Page size is %ld\n", sysconf(_SC_PAGE_SIZE));
+	ret = open(device_name, O_RDWR | O_SYNC);
+	if (ret < 0) {
+		PRINT_ERROR;
+		return -errno;
+	}
+	PR_FN("%s opened.\nPage size is %ld\n",
+	      device_name,
+	      sysconf(_SC_PAGE_SIZE));
 	fflush(stdout);
 	p_info->map_size = sysconf(_SC_PAGE_SIZE);
-
+	*pfd = ret;
 	return STATUS_OK;
 }
 
@@ -279,11 +286,20 @@ int pcimem_blk_write(const struct map_info *p_info,
  */
 int pcimem_deinit(struct map_info *p_info, int *pfd)
 {
-	if (munmap(p_info->map_base, p_info->map_size) == -1) {
+	int ret = -EINVAL;
+
+	if (!p_info || !p_info->map_base || !pfd) {
 		PRINT_ERROR;
-		return -EINVAL;
+		return ret;
+	}
+	ret = munmap(p_info->map_base, p_info->map_size);
+	if (ret < 0) {
+		PRINT_ERROR;
+		return -errno;
 	}
 	p_info->map_base = NULL;
-	close(*pfd);
-	return STATUS_OK;
+	p_info->map_size = 0;
+	ret = close(*pfd);
+	ret = (ret < 0) ? -errno : STATUS_OK;
+	return ret;
 }

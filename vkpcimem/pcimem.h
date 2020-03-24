@@ -10,9 +10,10 @@
 #include <stdint.h>
 #include <sys/types.h>
 
-#define STATUS_OK		0
+#define STATUS_OK               0
 
-#define PAGE_RNDUP(x, s)	(((x) + (s) - 1) & ~((s) - 1))
+#define PAGE_RNDUP(x, s)        (((x) + (s) - 1) & ~((s) - 1))
+#define PR_FN                   printf
 
 /* transaction width - future use - all is 32 bit for now */
 enum bit_align {
