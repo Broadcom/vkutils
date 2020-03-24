@@ -5,7 +5,7 @@ include_HEADERS = vcon_api.h
 libvcon_la_SOURCES = vcon_api.c
 libvcon_la_CFLAGS = $(pcimem_CFLAGS)
 
-ACLOCAL_AMFLAGS = -I m4
+ACLOCAL_AMFLAGS = -I m4 --install
 
 sbin_PROGRAMS = vkcon vkcmd
 
