@@ -14,6 +14,10 @@
 
 #define PAGE_RNDUP(x, s)        (((x) + (s) - 1) & ~((s) - 1))
 #define PR_FN                   printf
+#define FPR_FN(...)             do { \
+					fprintf(stdout, __VA_ARGS__); \
+					fflush(stdout); \
+				} while (0)
 
 /* transaction width - future use - all is 32 bit for now */
 enum bit_align {
@@ -25,6 +29,7 @@ enum bit_align {
 
 struct map_info {
 	void *map_base;
+	off_t off_base;
 	uint64_t map_size;
 };
 

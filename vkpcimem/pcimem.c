@@ -33,6 +33,27 @@
 		__LINE__, __FILE__, errno, strerror(errno)); exit(1); \
 	} while(0)
 
+static int check_range(const struct map_info *p_info, off_t offset)
+{
+	void *virt_addr;
+	void *end_map_addr;
+
+	if (!p_info || offset < 0) {
+		PRINT_ERROR;
+		return -EINVAL;
+	}
+	virt_addr = p_info->map_base + p_info->off_base + offset;
+	end_map_addr = p_info->map_base + p_info->map_size;
+	if (virt_addr >= end_map_addr) {
+		PR_FN("ERR_RANGE: start / end:\n%p\n%p\n",
+		      virt_addr,
+		      end_map_addr);
+		PRINT_ERROR;
+		return -EINVAL;
+	}
+	return STATUS_OK;
+}
+
 /**
  * @brief pcimem_init init the pcimem library; opens the device as file
  *
@@ -70,43 +91,48 @@ int pcimem_init(const char *device_name, struct map_info *p_info, int *pfd)
  * @param[in] p_info->map_size used in map call
  * @param[out] p_info->map_base - base address mapped in user space
  * @param[in] fd - the device file descriptor
- * @param[in] target - offset from base to access
+ * @param[in] offset - offset from base to access
  * @param[in] type_width - access width in bytes
  *
  * @return STATUS_OK on success, error code otherwise
  */
 int pcimem_map_base(struct map_info *p_info,
 		    const int fd,
-		    const off_t target,
+		    const off_t offset,
 		    const int type_width)
 {
-	off_t target_base;
-	target_base = target & ~(sysconf(_SC_PAGE_SIZE)-1);
+	off_t target_size;
+	off_t base_offset;
 
-	if (target + type_width - target_base > p_info->map_size)
-		p_info->map_size = target + type_width - target_base;
+	/* align the base address for mmap */
+	base_offset = offset & ~(sysconf(_SC_PAGE_SIZE) - 1);
 
-	/* Map one page */
-	printf("mmap( %10" PRId64 " 0x%x, 0x%x, %d, 0x%x)\n",
-	       p_info->map_size,
+	/* size must be page aligned also */
+	target_size = PAGE_RNDUP(p_info->map_size,
+				 sysconf(_SC_PAGE_SIZE));
+
+	FPR_FN("mmap( %10" PRId64 " 0x%x, 0x%x, %d, 0x%lx)\n",
+	       target_size,
 	       PROT_READ | PROT_WRITE,
 	       MAP_SHARED,
 	       fd,
-	       (int)target);
+	       base_offset);
 
+	/* Map required size rounded up to be page aligned */
 	p_info->map_base = mmap(0,
-				p_info->map_size,
+				target_size,
 				PROT_READ | PROT_WRITE | MAP_NORESERVE,
 				MAP_LOCKED | MAP_SHARED,
 				fd,
-				target_base);
+				base_offset);
 	if (p_info->map_base == (void *) -1) {
 		PRINT_ERROR;
 		return -EINVAL;
 	}
-	printf("PCI Memory mapped to address 0x%08lx.\n",
-		(unsigned long)p_info->map_base);
-	fflush(stdout);
+	p_info->off_base = offset - base_offset;
+	FPR_FN("PCI Memory mapped range:\n%p\n%p\n",
+	       p_info->map_base,
+	       p_info->map_base + p_info->map_size);
 	return STATUS_OK;
 }
 
@@ -114,7 +140,7 @@ int pcimem_map_base(struct map_info *p_info,
  * @brief pcimem_read reads within one mem page
  *
  * @param[in] p_info->map_base - base address mapped in user space
- * @param[in] target - offset within page
+ * @param[in] offset - offset from mapped base
  * @param[in] d_size - size of data buffer
  * @param[in] p_data - data buffer
  * @param[in] type_width - access width in bytes
@@ -122,16 +148,20 @@ int pcimem_map_base(struct map_info *p_info,
  * @return STATUS_OK on success, error code otherwise
  */
 int pcimem_read(const struct map_info *p_info,
-		const off_t target,
+		const off_t offset,
 		const int d_size,
 		void *p_data,
 		const int type_width)
 {
+	int res;
 	void *virt_addr;
 
-	if (target > sysconf(_SC_PAGE_SIZE))
+	res = check_range(p_info, offset);
+	if (res < 0) {
+		PRINT_ERROR;
 		return -EINVAL;
-	virt_addr = p_info->map_base + target;
+	}
+	virt_addr = p_info->map_base + p_info->off_base + offset;
 	switch (type_width) {
 	case ALIGN_8_BIT:
 		*(uint8_t *)p_data = *((uint8_t *)virt_addr);
@@ -146,6 +176,7 @@ int pcimem_read(const struct map_info *p_info,
 		*(uint64_t *)p_data = *((uint64_t *)virt_addr);
 		break;
 	default:
+		PRINT_ERROR;
 		return -EINVAL;
 	}
 	return STATUS_OK;
@@ -155,7 +186,7 @@ int pcimem_read(const struct map_info *p_info,
  * @brief pcimem_write writes within one mem page
  *
  * @param[in] p_info->map_base - base address mapped in user space
- * @param[in] target - offset within page
+ * @param[in] offset - offset from mapped base
  * @param[in] d_size - size of data buffer
  * @param[in] p_data - data buffer
  * @param[in] type_width - access width in bytes
@@ -163,17 +194,21 @@ int pcimem_read(const struct map_info *p_info,
  * @return STATUS_OK on success, error code otherwise
  */
 int pcimem_write(const struct map_info *p_info,
-		 const off_t target,
+		 const off_t offset,
 		 const int d_size,
 		 void *p_data,
 		 const int type_width)
 {
-	void *virt_addr;
+	int res;
 	uint64_t read_result = -1;
+	void *virt_addr;
 
-	if (target > sysconf(_SC_PAGE_SIZE))
+	res = check_range(p_info, offset);
+	if (res < 0) {
+		PRINT_ERROR;
 		return -EINVAL;
-	virt_addr = p_info->map_base + target;
+	}
+	virt_addr = p_info->map_base + p_info->off_base + offset;
 	switch (type_width) {
 	case ALIGN_8_BIT:
 		*((uint8_t *)virt_addr) = *(uint8_t *)p_data;
@@ -192,10 +227,13 @@ int pcimem_write(const struct map_info *p_info,
 		read_result = *((uint64_t *)virt_addr);
 		break;
 	default:
+		PRINT_ERROR;
 		return -EINVAL;
 	}
-	if (read_result != *(uint64_t *)p_data)
+	if (read_result != *(uint64_t *)p_data) {
+		PRINT_ERROR;
 		return -EINVAL;
+	}
 
 	return STATUS_OK;
 }
@@ -205,7 +243,7 @@ int pcimem_write(const struct map_info *p_info,
  *
  * @param[in] p_info->map_base - base address mapped in user space
  * @param[in] p_info->map_size - size of region mapped in user space
- * @param[in] target - offset within page
+ * @param[in] offset - offset from mapped base
  * @param[in] d_size - size of data buffer
  * @param[in] p_data - data buffer
  * @param[in] type_width - access width in bytes
@@ -213,26 +251,31 @@ int pcimem_write(const struct map_info *p_info,
  * @return STATUS_OK on success, error code otherwise
  */
 int pcimem_blk_read(const struct map_info *p_info,
-		    const off_t target,
+		    const off_t offset,
 		    const int d_size,
 		    void *p_data,
 		    const int type_width)
 {
-	void *end_mapped_addr;
 	int res = -EINVAL;
 	void *virt_addr;
 
-	if (target > sysconf(_SC_PAGE_SIZE))
+	if (!p_info | !p_data) {
+		PRINT_ERROR;
 		return -EINVAL;
-	if (p_info != NULL && p_data != NULL) {
-		end_mapped_addr = p_info->map_base + p_info->map_size;
-		virt_addr = p_info->map_base + target;
-		if (virt_addr == NULL ||
-		    virt_addr + d_size > end_mapped_addr)
-			return -EINVAL;
-		memcpy(p_data, virt_addr, d_size);
-		res = STATUS_OK;
 	}
+	res = check_range(p_info, offset);
+	if (res < 0) {
+		PRINT_ERROR;
+		return -EINVAL;
+	}
+	res = check_range(p_info, offset + d_size - 1);
+	if (res < 0) {
+		PRINT_ERROR;
+		return -EINVAL;
+	}
+	virt_addr = p_info->map_base + p_info->off_base + offset;
+	memcpy(p_data, virt_addr, d_size);
+	res = STATUS_OK;
 	return res;
 }
 
@@ -241,7 +284,7 @@ int pcimem_blk_read(const struct map_info *p_info,
  *
  * @param[in] p_info->map_base - base address mapped in user space
  * @param[in] p_info->map_size - size of region mapped in user space
- * @param[in] target - offset within page
+ * @param[in] offset - offset within page
  * @param[in] d_size - size of data buffer
  * @param[in] p_data - data buffer
  * @param[in] type_width - access width in bytes
@@ -249,28 +292,35 @@ int pcimem_blk_read(const struct map_info *p_info,
  * @return STATUS_OK on success, error code otherwise
  */
 int pcimem_blk_write(const struct map_info *p_info,
-		     const off_t target,
+		     const off_t offset,
 		     const int d_size,
 		     void *p_data,
 		     const int type_width)
 {
-	void *end_mapped_addr;
 	int res = -EINVAL;
 	void *virt_addr;
 
-	if (target > sysconf(_SC_PAGE_SIZE))
+	if (!p_info | !p_data) {
+		PRINT_ERROR;
 		return -EINVAL;
-	if (p_info != NULL && p_data != NULL) {
-		end_mapped_addr = p_info->map_base + p_info->map_size;
-		virt_addr = p_info->map_base + target;
-		if (virt_addr == NULL ||
-		    virt_addr + d_size > end_mapped_addr)
-			return -EINVAL;
-		memcpy(virt_addr, p_data, d_size);
-		if (memcmp(p_data, virt_addr, d_size) != 0)
-			return -EINVAL;
-		res = STATUS_OK;
 	}
+	res = check_range(p_info, offset);
+	if (res < 0) {
+		PRINT_ERROR;
+		return -EINVAL;
+	}
+	res = check_range(p_info, offset + d_size - 1);
+	if (res < 0) {
+		PRINT_ERROR;
+		return -EINVAL;
+	}
+	virt_addr = p_info->map_base + p_info->off_base + offset;
+	memcpy(virt_addr, p_data, d_size);
+	if (memcmp(p_data, virt_addr, d_size) != 0) {
+		PRINT_ERROR;
+		return -EINVAL;
+	}
+	res = STATUS_OK;
 	return res;
 }
 
