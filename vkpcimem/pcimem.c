@@ -16,6 +16,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <inttypes.h>
+#include <limits.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -29,10 +30,98 @@
 
 #define PRINT_ERROR \
 	do { \
-		fprintf(stderr, "Error at line %d, file %s (%d) [%s]\n", \
-		__LINE__, __FILE__, errno, strerror(errno)); exit(1); \
+		if (!p_info) { \
+			exit(-1); \
+		} else { \
+			fprintf(stderr, \
+				"Id %04d:%02d\tErr@L: %d, F: %s (%d) [%s]\n", \
+				p_info->d_id.nd, \
+				p_info->d_id.bar, \
+				__LINE__, \
+				__FILE__, \
+				errno, \
+				strerror(errno)); \
+			exit(1); \
+		} \
 	} while(0)
 
+#define _STR_BASE(_str)	(_str[1] == 'x' ? 16 : 10)
+
+/**
+ * @brief str2ul strtoul wrapper function
+ *
+ * @param[in] str string to convert
+ * @param[out] return_value value
+ *
+ * @return STATUS_OK on success, error code otherwise
+ */
+static int str2ul(char *str, unsigned long *return_value)
+{
+	char *endptr = NULL;
+
+	if (str == NULL || return_value == NULL)
+		return -EINVAL;
+	*return_value = strtoul(str, &endptr, _STR_BASE(str));
+	if (endptr == str)
+		return -EINVAL;
+	if ((*return_value == LONG_MAX ||
+	     *return_value == LONG_MIN) && errno == ERANGE)
+		return -ERANGE;
+	return STATUS_OK;
+}
+
+/**
+ * @brief get_Id parses device name string and gets d_id info
+ *
+ * @param[in] device_name name of the device to init
+ * @param[out] p_info->d_id.nd - node
+ * @param[out] p_info->d_id.bar - bar
+ *
+ * @return STATUS_OK on success, error code otherwise
+ */
+static int get_Id(char * const dev_name, struct map_info *p_info)
+{
+	char *num = NULL;
+	int len, ret;
+	unsigned long val;
+
+	if (!dev_name || !p_info)
+		return -EINVAL;
+
+	/* get node info */
+	len = strlen(dev_name);
+	if (len <= 3)
+		return -EINVAL;
+	num = strstr(dev_name, ".");
+	if (!num)
+		return -EINVAL;
+	num++;
+	ret = str2ul(num, &val);
+	if (ret < 0)
+		return -EINVAL;
+	p_info->d_id.nd = val;
+
+	/* get bar info */
+	p_info->d_id.bar = 0;
+	num = &dev_name[len - 1];
+	while (isdigit(num))
+		num--;
+	ret = str2ul(num, &val);
+	if (ret < 0)
+		return -EINVAL;
+	p_info->d_id.bar = val;
+	return STATUS_OK;
+}
+
+/**
+ * @brief check_range memory range check
+ *
+ * @param[in] p_info->map_base - base address mapped in user space
+ * @param[in] p_info->map_size - length of memory mapped region
+ * @param[in] offset - offset from base to access
+ *
+ * @return STATUS_OK on success, error code otherwise
+ */
 static int check_range(const struct map_info *p_info, off_t offset)
 {
 	void *virt_addr;
@@ -63,11 +152,14 @@ static int check_range(const struct map_info *p_info, off_t offset)
  *
  * @return STATUS_OK on success, error code otherwise
  */
-int pcimem_init(const char *device_name, struct map_info *p_info, int *pfd)
+int pcimem_init(char * const device_name, struct map_info *p_info, int *pfd)
 {
 	int ret = -EINVAL;
 
-	if (!p_info || !pfd) {
+	ret = get_Id(device_name, p_info);
+	if (ret < 0)
+		return ret;
+	if (!pfd) {
 		PRINT_ERROR;
 		return ret;
 	}

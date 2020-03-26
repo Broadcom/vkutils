@@ -27,13 +27,19 @@ enum bit_align {
 	ALIGN_64_BIT = 8
 };
 
+struct id_info {
+	uint16_t nd;
+	uint16_t bar;
+};
+
 struct map_info {
+	struct id_info d_id;
 	void *map_base;
 	off_t off_base;
 	uint64_t map_size;
 };
 
-int pcimem_init(const char *device_name,
+int pcimem_init(char * const device_name,
 		struct map_info *p_info,
 		int *pfd);
 
