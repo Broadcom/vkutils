@@ -555,15 +555,22 @@ static int scmd_get_param(int cmd_cnt,
 	switch (cclass) {
 	case CTRL_CMDS:
 		/* arguments validation */
+		value = -1;
 		while ((idx < cmd_cnt) && (count < MAX_SUB_CMDS)) {
 			for (i = CMD_FIRST; ca->scmds[i] != NULL; i++) {
-				if (strcmp(ca->scmds[i],
+				if (value == -1 &&
+				    strcmp(ca->scmds[i],
 					   cmd_param_tbl[idx]) == 0) {
 					scmd_idx[count] = i;
+					value = count;
+					count++;
+					continue;
+				}
+				/* record all indexes following found cmd */
+				if (value >= 0) {
+					scmd_idx[count] = idx - count;
 					count++;
 					break;
-				} else {
-					continue;
 				}
 			}
 			idx++;
@@ -625,26 +632,37 @@ static int cmd_li(int fd,
 				    .type = VK_IMAGE_TYPE_BOOT2}
 				  };
 	int start_idx = 0, end_idx = 0;
+	struct cmd_unit *ucmd;
 
+	ucmd = &cmd_lookup_tbl[cmd_idx];
 	fprintf(stdout,
-		"Issue command %s\n", cmd_lookup_tbl[cmd_idx].cmd_name);
+		"Issue command %s\n", ucmd->cmd_name);
 	fflush(stdout);
 
 	/* only support li at this time */
-	if (strcmp("li", cmd_lookup_tbl[cmd_idx].cmd_name) != 0) {
+	if (strcmp("li", ucmd->cmd_name) != 0) {
 		PERROR("Unsupported load command %s\n",
-		       cmd_lookup_tbl[cmd_idx].cmd_name);
+		       ucmd->cmd_name);
 		return -EINVAL;
 	}
 	switch (scmd_idx[0]) {
+	/* boot1 */
 	case 0:
 		start_idx = 0;
 		end_idx = 0;
+		if (scmd_cnt > 1)
+			strcpy(image[0].filename,
+			       cmd_param_tbl[ARG_PARAM2]);
 		break;
+	/* boot2 */
 	case 1:
 		start_idx = 1;
 		end_idx = 1;
+		if (scmd_cnt > 1)
+			strcpy(image[0].filename,
+			       cmd_param_tbl[ARG_PARAM2]);
 		break;
+	/* boot1 + boot2 */
 	case 2:
 		start_idx = 0;
 		end_idx = 1;
@@ -663,9 +681,9 @@ static int cmd_li(int fd,
 			   VK_IOCTL_LOAD_IMAGE,
 			   &image[arg_idx]);
 		if (rc < 0) {
-			PERROR("VK_IO fail 0x%x",
-			       rc);
-			return rc;
+			PERROR("VK_IOCTL_LOAD_IMAGE Err:%d - %s\n",
+			       errno, strerror(errno));
+			return -errno;
 		}
 	}
 	return STATUS_OK;
@@ -1085,6 +1103,7 @@ int main(int argc,
 	rc = cmd_handler(cmd_cnt, scmd_cnt, node);
 	/* DO NOT REMOVE */
 	/* Following line used as END marker by calling scripts */
-	printf("\nClose\n");
+	fprintf(stdout, "\nClose\n");
+	fflush(stdout);
 	return rc;
 }

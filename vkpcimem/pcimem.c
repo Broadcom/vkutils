@@ -46,7 +46,7 @@ int pcimem_init(const char *device_name, struct map_info *p_info, int *pfd)
 {
 	int ret = -EINVAL;
 
-	if (!p_info || !p_info->map_base || !pfd) {
+	if (!p_info || !pfd) {
 		PRINT_ERROR;
 		return ret;
 	}
