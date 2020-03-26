@@ -5,6 +5,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -16,6 +17,7 @@
 
 #include "bcm_vk.h"
 #include "vcon_api.h"
+#include "pcimem.h"
 
 /**
  * @file
@@ -28,6 +30,8 @@
 
 #define DEV_DRV_NAME             "/dev/bcm_vk"
 #define DEV_ALT_DRV_NAME         "/dev/bcm-vk"
+#define DEV_SYSFS_NAME           "/sys/class/misc/bcm-vk"
+#define DEV_SYS_RESOURCE         "/pci/resource"
 
 #define VCON_CMD_CHAN_FREE       0
 #define VCON_CMD_CHAN_OCCUPIED   1
@@ -44,7 +48,8 @@
 #define VCON_CMD_DB_VAL          0xFFFFFFF0
 
 #define MAX_MMAP_SIZE            (2 * 1024 * 1024)
-#define VCON_RNDUP(_x, _s)       (((_x) + (_s) - 1) & ~((_s) - 1))
+
+#define STR_BASE(str)            (str[1] == 'x' ? 16 : 10)
 
 /**
  * interface structure, and this has to match the VK side definition.
@@ -66,6 +71,24 @@ static uint32_t mmap_size = VCON_DEF_MMAP_SIZE;
 static logger_buf *p_log_buf;
 static uint32_t rd_idx; /* current rd_idx */
 
+struct map_info chan_map_info = { {0, 0}, NULL, 0, 4096 };
+struct map_info cmd_map_info = { {0, 0}, NULL, 0, 4096 };
+
+static int string2ul(char *str, unsigned long *return_value)
+{
+	char *endptr = NULL;
+
+	if (str == NULL || return_value == NULL)
+		return -EINVAL;
+	*return_value = strtoul(str, &endptr, STR_BASE(str));
+	if (endptr == str)
+		return -EINVAL;
+	if ((*return_value == LONG_MAX ||
+	     *return_value == LONG_MIN) && errno == ERANGE)
+		return -ERANGE;
+	return STATUS_OK;
+}
+
 /**
  * @brief Read data to the buffer passed in by caller
  * @param buf pointer to output buf
@@ -73,8 +96,8 @@ static uint32_t rd_idx; /* current rd_idx */
  * @Return number of bytes that have been extracted, including '\0', negative
  *         number for error conditions
  *
- * NOTE: the output buffer will always has a complete log.  If the buffer could
- *        not fit a line in, the line will stay intact until the next polling.
+ * NOTE: the output buffer will always has a complete log. If the buffer could
+ *       not fit a line in, the line will stay intact until the next polling.
  */
 int vcon_get_cmd_output(char *buf, const size_t buf_size)
 {
@@ -85,9 +108,10 @@ int vcon_get_cmd_output(char *buf, const size_t buf_size)
 	char *p_buf = buf;
 	char *p_line;
 
-	if (p_log_buf->marker != VCON_MARKER)
+	if (p_log_buf->marker != VCON_MARKER) {
+		PR_FN("Invalid marker");
 		return -EACCES;
-
+	}
 	entry_len = p_log_buf->spool_len;
 	nentries = p_log_buf->spool_nentries;
 	spool_buf = ((char *)p_log_buf + p_log_buf->spool_off);
@@ -97,11 +121,11 @@ int vcon_get_cmd_output(char *buf, const size_t buf_size)
 
 	while ((rd_idx != p_log_buf->spool_idx) &&
 	       ((ret + entry_len) <= buf_size)) {
-
 		/* check marker for PCIe going down */
-		if (p_log_buf->marker != VCON_MARKER)
+		if (p_log_buf->marker != VCON_MARKER) {
+			PR_FN("PCIe interface going down");
 			return -EACCES;
-
+		}
 		p_line = &spool_buf[rd_idx * entry_len];
 
 		/* cp the whole line but excluding terminator */
@@ -134,55 +158,54 @@ int vcon_get_cmd_output(char *buf, const size_t buf_size)
  */
 int vcon_send_cmd(int fd, const char *cmd)
 {
-	uint32_t cnt = 0;
-	static const uint32_t data = VCON_CMD_DB_VAL;
-	static const struct vk_access io_cmd_notify = {
-		.barno  = 0,
-		.type   = VK_ACCESS_WRITE,
-		.len    = sizeof(uint32_t),
-		.offset = VCON_CMD_DB_OFFSET,
-		.data   = (uint32_t *)&data,
-	};
-	int rc;
 	char *cmd_chan;
+	uint32_t cnt = 0;
+	static uint32_t data = VCON_CMD_DB_VAL;
+	int len = 0;
+	int rc;
 
 	cmd_chan = ((char *)p_log_buf + p_log_buf->cmd_off);
-
 	if (cmd[0] == '\0')
 		goto tx_success;
 
-	if (p_log_buf->marker != VCON_MARKER)
+	if (p_log_buf->marker != VCON_MARKER) {
+		PR_FN("failed to find markeri\n");
 		return -EACCES;
-
+	}
 
 	/* first byte is an indicator */
-	if (*cmd_chan != VCON_CMD_CHAN_FREE)
+	if (*cmd_chan != VCON_CMD_CHAN_FREE) {
+		PR_FN("channel busy\n");
 		return -EBUSY;
-
+	}
 	/* cpy the command to the cmd location, and wait for it to be cleared */
 	strncpy(cmd_chan + 1, cmd, VCON_MAX_CMD_SIZE);
 	cmd_chan[VCON_MAX_CMD_SIZE] = '\0';
 	*cmd_chan = VCON_CMD_CHAN_OCCUPIED; /* mark it to be valid */
-
 	/* press door bell */
-	rc = ioctl(fd, VK_IOCTL_ACCESS_BAR, &io_cmd_notify);
-	if (rc)
-		return -EFAULT;
-
+	rc = pcimem_write(&cmd_map_info,
+			  0,
+			  len,
+			  &data,
+			  ALIGN_32_BIT);
+	if (rc < 0) {
+		PR_FN("bad io write; err=0x%x\n",
+		      rc);
+		return rc;
+	}
 	usleep(VCON_IN_CMD_POLL_US);
-
 	/* loop until doorbell cleared */
 	while (++cnt <= VCON_IN_CMD_POLL_MAX) {
 		if (*cmd_chan == VCON_CMD_CHAN_FREE)
 			break;
-
 		usleep(VCON_IN_CMD_POLL_US);
 	}
-
-	if (cnt > VCON_IN_CMD_POLL_MAX)
+	if (cnt > VCON_IN_CMD_POLL_MAX) {
+		PR_FN("timeout waiting for doorbell clear\n");
 		return -ETIMEDOUT;
+	}
 tx_success:
-	return 0;
+	return STATUS_OK;
 }
 
 /**
@@ -195,71 +218,87 @@ tx_success:
 int vcon_open_cmd_chan(const char *dev_name, uint32_t offset,
 		       uint32_t *p_mapped_size)
 {
+	unsigned long fnode = 0;
+	unsigned long req_size = 0;
+	int bar = 2;
 	char devnode[50];
 	char *node_num = NULL;
-	uint32_t bar2_off = (offset) ? offset : VCON_BUF_BAR2_OFF;
-	int fd = -1;
-	int ret = 0;
+	off_t bar0_off, bar2_off;
+	int ret = -EINVAL;
 
 	/* open device */
 	if (strlen(dev_name) > 3) {
 		node_num = strstr(dev_name, ".");
-		if (!node_num)
+		if (!node_num) {
+			PR_FN("invalid device\n");
 			return -EINVAL;
+		}
 		node_num++;
 	} else {
 		node_num = (char *)dev_name;
 	}
+	string2ul(node_num, &fnode);
 
-	snprintf(devnode, sizeof(devnode), DEV_DRV_NAME ".%s", node_num);
-	devnode[sizeof(devnode) - 1] = '\0';
-	fd = open(devnode, O_RDWR | O_SYNC);
-	if (fd < 0) {
-		/* try alternate name */
-		snprintf(devnode, sizeof(devnode), DEV_ALT_DRV_NAME ".%s",
-			 node_num);
-		devnode[sizeof(devnode) - 1] = '\0';
-		fd = open(devnode, O_RDWR | O_SYNC);
-		if (fd < 0)
-			return fd;
+	snprintf(devnode,
+		 sizeof(devnode),
+		 DEV_SYSFS_NAME ".%ld" DEV_SYS_RESOURCE "%d",
+		 fnode, 2 * bar);
+	pcimem_init(devnode, &chan_map_info, (int *)&fnode);
+	chan_map_info.map_size = mmap_size;
+	bar2_off = VCON_BUF_BAR2_OFF;
+	ret = pcimem_map_base(&chan_map_info,
+			      fnode,
+			      bar2_off,
+			      sizeof(uint32_t));
+	if (ret < 0) {
+		PR_FN("fail to mmap\n");
+		return -EINVAL;
 	}
-
-	while (p_log_buf == NULL) {
-		uint32_t req_size;
-
-		/* do mmap & map it to our struct */
-		p_log_buf = mmap(0, mmap_size, PROT_READ | PROT_WRITE,
-				 MAP_SHARED, fd, bar2_off);
-		if ((p_log_buf == MAP_FAILED)
-		    || (p_log_buf->marker != VCON_MARKER)) {
-			ret = -EACCES;
-			goto fail;
-		}
-
-		/*
-		 * Do some calculation and see if the mmap region is big enough.
-		 * If not, remmap based on new size
-		 */
-		req_size = p_log_buf->cmd_off + VCON_CMD_CHAN_SIZE;
-		if (req_size > mmap_size) {
-
-			munmap(p_log_buf, mmap_size);
-			mmap_size = VCON_RNDUP(req_size, 0x1000);
-			p_log_buf = NULL;
-
-			if (mmap_size > MAX_MMAP_SIZE) {
-				ret = -ENOMEM;
-				goto fail;
-			}
+	/* do mmap & map it to our struct */
+	p_log_buf = chan_map_info.map_base +
+		    chan_map_info.off_base;
+	if (p_log_buf->marker != VCON_MARKER) {
+		PR_FN("failed to find marker\n");
+		ret = -EACCES;
+	}
+	/*
+	 * Do some calculation and see if the mmap region is big enough.
+	 * If not, remmap based on new size
+	 */
+	req_size = p_log_buf->cmd_off + VCON_CMD_CHAN_SIZE;
+	if (ret == STATUS_OK && req_size > mmap_size) {
+		pcimem_deinit(&chan_map_info,
+			      (int *)&fnode);
+		pcimem_init(devnode, &chan_map_info, (int *)&fnode);
+		chan_map_info.map_size = req_size;
+		ret = pcimem_map_base(&chan_map_info,
+				      fnode,
+				      bar2_off,
+				      sizeof(uint32_t));
+		if (ret < 0) {
+			PR_FN("fail to mmap\n");
+			return -EINVAL;
 		}
 	}
-
-	*p_mapped_size = mmap_size;
+	p_log_buf = chan_map_info.map_base +
+		    chan_map_info.off_base;
+	*p_mapped_size = chan_map_info.map_size;
 	rd_idx = p_log_buf->spool_idx;
-	return fd;
 
-fail:
-	close(fd);
+	/* Need bar 0 also mapped for sending commands */
+	bar = 0;
+	memset(devnode, 0, sizeof(devnode));
+	string2ul(node_num, &fnode);
+	snprintf(devnode,
+		 sizeof(devnode),
+		 DEV_SYSFS_NAME ".%ld" DEV_SYS_RESOURCE "%d",
+		 fnode, 2 * bar);
+	pcimem_init(devnode, &cmd_map_info, (int *)&fnode);
+	bar0_off = VCON_CMD_DB_OFFSET;
+	ret = pcimem_map_base(&cmd_map_info,
+			      fnode,
+			      bar0_off,
+			      sizeof(uint32_t));
 	return ret;
 }
 
@@ -268,12 +307,12 @@ fail:
  * @param fd file descriptor that has been opened
  * @return positive file descriptor, or negative error value
  */
-int vcon_close_cmd_chan(int fd)
+int vcon_close_cmd_chan(void)
 {
-	int ret;
+	int ret = 0;
+	unsigned long fnode = 0;
 
-	ret = munmap(p_log_buf, mmap_size);
-	close(fd);
-
+	pcimem_deinit(&chan_map_info,
+		      (int *)&fnode);
 	return ret;
 }

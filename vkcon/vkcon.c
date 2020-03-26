@@ -62,7 +62,6 @@ static void *output_thread(void *arg)
 
 	/* log info to user */
 	_PR_LINE("VK Virtual Console Output starts:\n");
-
 	while (out_thread_running) {
 
 		ret = vcon_get_cmd_output(buf, sizeof(buf));
@@ -110,7 +109,7 @@ static void vcon_in_cmd_loop(int fd)
 		 * replace it with \0 for our consumption on VK
 		 */
 		if (ret < 0) {
-			_PR_LINE("Error reading line from stdin - (%s)%d",
+			_PR_LINE("Error reading line from stdin - (%s)%d\n",
 				 strerror(-ret), ret);
 			break;
 		}
@@ -122,7 +121,7 @@ static void vcon_in_cmd_loop(int fd)
 
 		ret = vcon_send_cmd(fd, p_char);
 		if (ret) {
-			_PR_LINE("Send Cmd Failure - %s(%d)",
+			_PR_LINE("Send Cmd Failure - %s(%d)\n",
 				 strerror(-ret), ret);
 			if (ret == -EACCES)
 				_PR_LINE("Possibly PCIe going down, exit...\n");
@@ -197,7 +196,7 @@ int main(int argc, char **argv)
 
 	fd = vcon_open_cmd_chan(dev_name, bar2_off, &mapped_size);
 	if (fd < 0) {
-		_PR_LINE("Fail to open communication channel - %s(%d)",
+		_PR_LINE("Fail to open communication channel - %s(%d)\n",
 			 strerror(-fd), fd);
 		return -EINVAL;
 	}
@@ -253,13 +252,13 @@ free_and_exit:
 	if (ret != -EACCES) {
 		ret = vcon_send_cmd(fd, VCON_DISABLE);
 		if (ret) {
-			_PR_LINE("VCON_DISABLE Send Cmd Failure - %s(%d)",
+			_PR_LINE("VCON_DISABLE Send Cmd Failure - %s(%d)\n",
 				 strerror(-ret), ret);
 		}
 	}
 
 	/* close communication channel in the end */
-	ret = vcon_close_cmd_chan(fd);
+	ret = vcon_close_cmd_chan();
 	if (ret)
 		_PR_LINE("Error closing channel fd %d - %s(%d)\n",
 			 fd, strerror(-ret), ret);

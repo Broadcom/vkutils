@@ -23,7 +23,7 @@
 
 int vcon_open_cmd_chan(const char *dev_name, uint32_t offset,
 		       uint32_t *p_mapped_size);
-int vcon_close_cmd_chan(int fd);
+int vcon_close_cmd_chan(void);
 int vcon_get_cmd_output(char *buf, const size_t buf_size);
 int vcon_send_cmd(int fd, const char *cmd);
 

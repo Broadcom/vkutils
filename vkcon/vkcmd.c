@@ -148,7 +148,7 @@ free_and_exit:
 		_PR_LINE("Error to exit - %s(%d)\n", strerror(-ret), ret);
 
 	/* close communication channel in the end */
-	rc = vcon_close_cmd_chan(fd);
+	rc = vcon_close_cmd_chan();
 	if (rc)
 		_PR_LINE("Error closing channel fd %d - %s(%d)\n",
 			 fd, strerror(-rc), rc);
