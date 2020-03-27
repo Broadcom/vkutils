@@ -60,7 +60,7 @@
 /* local macros */
 #define _STR_BASE(_str)	(_str[1] == 'x' ? 16 : 10)
 
-#define FNAME_LEN	128
+#define FNAME_LEN	64
 #define MAX_FILESIZE	0x4000000	/* 64MB */
 #define MAX_ERR_MSG	255
 
@@ -99,6 +99,7 @@ enum arg_index {
 	ARG_PARAM3,
 	ARG_PARAM4,
 	ARG_PARAM5,
+	ARG_LAST,
 	MAX_SUB_CMDS = (ARG_PARAM5 -
 			ARG_PARAM1 + 1)
 };
@@ -132,6 +133,12 @@ enum cmd_class {
 enum cmd_mode {
 	CMD_MODE_VERIFY,
 	CMD_MODE_EXEC
+};
+
+enum li_method {
+	LI_BOOT1 = 0,
+	LI_BOOT2,
+	LI_BOOT1_BOOT2
 };
 
 enum cmd_node {
@@ -183,7 +190,7 @@ static struct cmd_attributes attr_lookup_tbl[] = {
 /*	SUB_CMD(s)                CLASS,    MIN_P, MAX_P */
 	{ { "" },                   MAX_CMDS,     0, 0 },
 	{ { "" },                   CTRL_CMDS,    0, 0 },
-	{ {"boot1", "boot2", "-"},  CTRL_CMDS,    1, 2 },
+	{ {"boot1", "boot2", "-"},  CTRL_CMDS,    1, 3 },
 	{ { "" },                   IO_AXS_CMDS,  2, 2 },
 	{ { "" },                   IO_AXS_CMDS,  3, 3 },
 	{ { "" },                   FIO_AXS_CMDS, 4, 4 },
@@ -204,7 +211,7 @@ static struct cmd_unit cmd_lookup_tbl[] = {
 };
 
 /* variable command line parameter table */
-static char cmd_param_tbl[MAX_SUB_CMDS][FNAME_LEN];
+static char cmd_param_tbl[ARG_LAST][FNAME_LEN];
 
 /* function prototypes */
 static int cmd_get_class(int scmds_cnt, enum cmd_class *cclass);
@@ -223,7 +230,7 @@ static void print_usage(void)
 	printf("node_num: 0..11\n");
 	printf("Available arguments:\n");
 	printf("\tli: load image\n");
-	printf("\t\t[-/boot1/boot2]\n");
+	printf("\t\t<-/boot1/boot2> [fname1] [fname2]\n");
 	printf("\t\t\t'-' load both stages (both boot1 and boot2)\n");
 	printf("\t\t\t'boot1' -- only first stage (boot1)\n");
 	printf("\t\t\t'boot2' -- only second stage (boot2)\n");
@@ -542,7 +549,7 @@ static int scmd_get_param(int cmd_cnt,
 	int count = 0, i = 0, limit = 0;
 	int idx = ARG_PARAM1;
 	struct cmd_attributes *ca;
-	int ret;
+	int ret = -EINVAL;
 	int scmds;
 	int tot_cnt = 0;
 	int value = 0;
@@ -550,32 +557,30 @@ static int scmd_get_param(int cmd_cnt,
 	*scmd_idx = 0;
 	*scmd_cnt = 0;
 	ca = cmd_lookup_tbl[cmd_idx].cmd_attrib;
-	scmds = cmd_cnt - ARG_PARAM1;
+	scmds = cmd_cnt - ARG_CMD;
 	cclass = ca->class;
 	switch (cclass) {
 	case CTRL_CMDS:
 		/* arguments validation */
 		value = -1;
-		while ((idx < cmd_cnt) && (count < MAX_SUB_CMDS)) {
-			for (i = CMD_FIRST; ca->scmds[i] != NULL; i++) {
-				if (value == -1 &&
-				    strcmp(ca->scmds[i],
-					   cmd_param_tbl[idx]) == 0) {
-					scmd_idx[count] = i;
-					value = count;
-					count++;
-					continue;
-				}
-				/* record all indexes following found cmd */
+		while ((idx < cmd_cnt) && (count < ca->max_params)) {
+			for (i = 0; i < MAX_SUB_CMDS; i++) {
 				if (value >= 0) {
-					scmd_idx[count] = idx - count;
-					count++;
+					scmd_idx[count] = idx - ARG_CMD - value;
+					tot_cnt++;
 					break;
+				} else if (strcmp(ca->scmds[i],
+					   cmd_param_tbl[idx]) == 0) {
+					scmd_idx[0] = i;
+					value = idx - ARG_CMD;
+					ret = STATUS_OK;
 				}
+				count++;
 			}
 			idx++;
 		}
-		*scmd_cnt = (count > 0) ? (count - 1) : 0;
+		ret = (count == 0) ? STATUS_OK : ret;	/* CMD w/o args */
+		tot_cnt = (tot_cnt > 0) ? tot_cnt - 1 : 0;
 		break;
 	case IO_AXS_CMDS:
 		limit = scmds;
@@ -598,13 +603,14 @@ static int scmd_get_param(int cmd_cnt,
 		}
 		/* take into account non-numeric param -last one */
 		tot_cnt = (scmds - limit) + count;
-		*scmd_cnt = tot_cnt;
 		break;
 	case MAX_CMDS:
 	default:
+		ret = -EINVAL;
 		break;
 	}
-	return STATUS_OK;
+	*scmd_cnt = (ret == STATUS_OK) ? tot_cnt : 0;
+	return ret;
 }
 
 /**
@@ -626,13 +632,14 @@ static int cmd_li(int fd,
 {
 	int arg_idx, rc;
 	char e_msg[MAX_ERR_MSG] = "";
-	struct vk_image image[] = {{.filename = "vk-boot1.bin",
+	struct vk_image image[] = {{.filename  = "",
 				    .type = VK_IMAGE_TYPE_BOOT1},
-				   {.filename = "vk-boot2.bin",
-				    .type = VK_IMAGE_TYPE_BOOT2}
+				   {.filename  = "",
+				    .type = VK_IMAGE_TYPE_BOOT2},
 				  };
 	int start_idx = 0, end_idx = 0;
 	struct cmd_unit *ucmd;
+	size_t size;
 
 	ucmd = &cmd_lookup_tbl[cmd_idx];
 	fprintf(stdout,
@@ -645,27 +652,42 @@ static int cmd_li(int fd,
 		       ucmd->cmd_name);
 		return -EINVAL;
 	}
+	size = sizeof(image[0].filename);
 	switch (scmd_idx[0]) {
 	/* boot1 */
-	case 0:
-		start_idx = 0;
-		end_idx = 0;
-		if (scmd_cnt > 1)
-			strcpy(image[0].filename,
-			       cmd_param_tbl[ARG_PARAM2]);
+	case LI_BOOT1:
+		start_idx = LI_BOOT1;
+		end_idx = LI_BOOT1;
+		if (scmd_cnt == 1)
+			strncpy(image[LI_BOOT1].filename,
+				cmd_param_tbl[ARG_PARAM2],
+				size);
+		image[LI_BOOT1].filename[size - 1] = '\0';
 		break;
 	/* boot2 */
-	case 1:
-		start_idx = 1;
-		end_idx = 1;
-		if (scmd_cnt > 1)
-			strcpy(image[0].filename,
-			       cmd_param_tbl[ARG_PARAM2]);
+	case LI_BOOT2:
+		start_idx = LI_BOOT2;
+		end_idx = LI_BOOT2;
+		if (scmd_cnt == 1)
+			strncpy(image[LI_BOOT2].filename,
+				cmd_param_tbl[ARG_PARAM2],
+				size);
+		image[LI_BOOT2].filename[size - 1] = '\0';
 		break;
 	/* boot1 + boot2 */
-	case 2:
-		start_idx = 0;
-		end_idx = 1;
+	case LI_BOOT1_BOOT2:
+		start_idx = LI_BOOT1;
+		end_idx = LI_BOOT2;
+		if (scmd_cnt >= 1) {
+			strncpy(image[LI_BOOT1].filename,
+				cmd_param_tbl[ARG_PARAM2],
+				size);
+			strncpy(image[LI_BOOT2].filename,
+				cmd_param_tbl[ARG_PARAM3],
+				size);
+		}
+		image[LI_BOOT1].filename[size - 1] = '\0';
+		image[LI_BOOT2].filename[size - 1] = '\0';
 		break;
 	default:
 		return -EINVAL;
@@ -1005,6 +1027,7 @@ static int  cmd_handler(int cmd_cnt,
 	int data[MAX_SUB_CMDS];
 	char device_path[MAX_SYS_PATH] = "";
 	char e_msg[MAX_ERR_MSG] = "";
+	enum cmd_node n_id;
 	int rc = -1;
 	int ret = -EINVAL;
 	int scmds_found = 0;
@@ -1014,67 +1037,61 @@ static int  cmd_handler(int cmd_cnt,
 		return STATUS_OK;
 	}
 	memset(data, 0, sizeof(data));
-	rc = cmd_get_class(scmd_cnt, &cmdc);
-	if (rc < 0) {
+	ret = cmd_get_class(scmd_cnt, &cmdc);
+	if (ret < 0) {
 		PERROR("%s: bad command for class %d; err=0x%x",
 		       cmd_param_tbl[ARG_CMD],
 		       cmdc,
-		       rc);
+		       ret);
 		return ret;
 	}
-	rc = cmd_lookup(cmdc, &cmd_idx);
-	if (rc < 0) {
+	ret = cmd_lookup(cmdc, &cmd_idx);
+	if (ret < 0) {
 		PERROR("%s: bad command; err=0x%x",
 		       cmd_param_tbl[ARG_CMD],
-		       rc);
-		ret = rc;
-	} else {
-		enum cmd_node n_id = rc;
+		       ret);
+		return ret;
+	}
+	n_id = cmd_lookup_tbl[cmd_idx].cmd_node;
+	if (n_id == ND_HELP) {
+		print_usage();
+		return STATUS_OK;
+	}
+	ret = scmd_get_param(cmd_cnt,
+			     cmd_idx,
+			     data,
+			     &scmds_found);
+	if (ret == STATUS_OK) {
+		int bar = 0;
 
-		n_id = cmd_lookup_tbl[cmd_idx].cmd_node;
-		if (n_id == ND_HELP) {
-			print_usage();
-			return STATUS_OK;
-		}
-		rc = scmd_get_param(cmd_cnt,
-				    cmd_idx,
-				    data,
-				    &scmds_found);
-		if (rc == STATUS_OK) {
-			int bar = 0;
-
-			bar = (cmdc & (IO_AXS_CMDS | FIO_AXS_CMDS)) ?
-					data[SC_BAR] * 2 : 0;
-			rc = cmd_node_lookup(fnode,
-					     bar,
-					     CMD_MODE_VERIFY,
-					     cmd_idx,
-					     device_path,
-					     NULL);
-			if (rc < 0) {
-				PERROR("bad node; %d %s err=0x%x",
-				       fnode,
-				       device_path,
-				       errno);
-				ret = rc;
-			} else {
-				ret =  handle_cmd_apply(fnode,
-							bar,
-							cmd_idx,
-							data,
-							scmds_found,
-							device_path);
-			}
-		} else {
-			PERROR("bad command; %d %s err=0x%x",
-			       cmd_idx,
+		bar = (cmdc & (IO_AXS_CMDS | FIO_AXS_CMDS)) ?
+		       data[SC_BAR] * 2 : 0;
+		ret = cmd_node_lookup(fnode,
+				      bar,
+				      CMD_MODE_VERIFY,
+				      cmd_idx,
+				      device_path,
+				      NULL);
+		if (ret < 0)
+			PERROR("bad node; %d %s err=0x%x",
+			       fnode,
 			       device_path,
 			       errno);
-			ret = errno;
-		}
-		fprintf(stdout, "\tcommand done");
-		fflush(stdout);
+		else
+			ret =  handle_cmd_apply(fnode,
+						bar,
+						cmd_idx,
+						data,
+						scmds_found,
+						device_path);
+	} else {
+		PERROR("bad command; %d %s err=0x%x",
+		       cmd_idx,
+		       device_path,
+		       ret);
 	}
+	fprintf(stdout, "\tcommand done");
+	fflush(stdout);
 	return ret;
 }
 
