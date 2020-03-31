@@ -556,7 +556,7 @@ static int scmd_get_param(int cmd_cnt,
 	*scmd_idx = 0;
 	*scmd_cnt = 0;
 	ca = cmd_lookup_tbl[cmd_idx].cmd_attrib;
-	scmds = cmd_cnt - ARG_CMD;
+	scmds = cmd_cnt - ARG_PARAM1;
 	cclass = ca->class;
 	switch (cclass) {
 	case CTRL_CMDS:
@@ -595,8 +595,6 @@ static int scmd_get_param(int cmd_cnt,
 			if (ret == STATUS_OK) {
 				scmd_idx[count + SC_BAR] = value;
 				count++;
-			} else {
-				continue;
 			}
 			idx++;
 		}
@@ -774,7 +772,7 @@ static int cmd_io(int fd,
 	int io_file = 0;
 	unsigned int len = 0;
 	int li = 0;
-	struct map_info lmap_info = { NULL, 4096 };
+	struct map_info lmap_info = { {0, 0}, NULL, 0, 4096 };
 	off_t offset;
 	int ret = -EINVAL, sys_ps = 0;
 	struct cmd_unit *ucmd;
