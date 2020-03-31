@@ -104,9 +104,9 @@ static int get_Id(char * const dev_name, struct map_info *p_info)
 	/* get bar info */
 	p_info->d_id.bar = 0;
 	num = &dev_name[len - 1];
-	while (isdigit(num))
+	while (isdigit(*num))
 		num--;
-	ret = str2ul(num, &val);
+	ret = str2ul(num + 1, &val);
 	if (ret < 0)
 		return -EINVAL;
 	p_info->d_id.bar = val;
