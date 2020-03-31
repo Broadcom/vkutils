@@ -126,13 +126,16 @@ static int check_range(const struct map_info *p_info, off_t offset)
 {
 	void *virt_addr;
 	void *end_map_addr;
+	off_t mapped_size;
 
 	if (!p_info || offset < 0) {
 		PRINT_ERROR;
 		return -EINVAL;
 	}
 	virt_addr = p_info->map_base + p_info->off_base + offset;
-	end_map_addr = p_info->map_base + p_info->map_size;
+	mapped_size = PAGE_RNDUP(p_info->map_size,
+				 sysconf(_SC_PAGE_SIZE));
+	end_map_addr = p_info->map_base + mapped_size;
 	if (virt_addr >= end_map_addr) {
 		PR_FN("ERR_RANGE: start / end:\n%p\n%p\n",
 		      virt_addr,
@@ -222,9 +225,10 @@ int pcimem_map_base(struct map_info *p_info,
 		return -EINVAL;
 	}
 	p_info->off_base = offset - base_offset;
-	FPR_FN("PCI Memory mapped range:\n%p\n%p\n",
+	FPR_FN("PCI Memory mapped range:\n%p\n%p <%lx>\n",
 	       p_info->map_base,
-	       p_info->map_base + p_info->map_size);
+	       p_info->map_base + p_info->map_size,
+	       p_info->off_base);
 	return STATUS_OK;
 }
 
