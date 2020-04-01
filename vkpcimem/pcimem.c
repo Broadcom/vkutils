@@ -225,7 +225,7 @@ int pcimem_map_base(struct map_info *p_info,
 		return -EINVAL;
 	}
 	p_info->off_base = offset - base_offset;
-	FPR_FN("PCI Memory mapped range:\n%p\n%p <%lx>\n",
+	FPR_FN("PCI Memory mapped range:\n%p\n%p <0x%lx>\n",
 	       p_info->map_base,
 	       p_info->map_base + p_info->map_size,
 	       p_info->off_base);
