@@ -27,10 +27,12 @@
  */
 
 /* start and end commands for virtual console */
-#define VKCMD_SLEEP_US 10000     /* 10ms */
-#define VKCMD_OUT_BUF_SIZE       (2 * 1024)
-#define VKCMD_MIN_DURATION_SEC   1
+#define VKCMD_SLEEP_US			10000     /* 10ms */
+#define VKCMD_OUT_BUF_SIZE		(2 * 1024)
+#define VKCMD_MIN_DURATION_SEC		1
+#define VCON_CMD_DB_OFFSET		0x49c
 
+/* local macros */
 #define _PR_LINE(...)                       \
 {                                           \
 	printf(__VA_ARGS__);                \
@@ -46,18 +48,17 @@ int main(int argc, char **argv)
 	int option_index;
 	int32_t ret = -1, rc;
 	char *dev_name = NULL;
-	uint32_t bar2_off = VCON_BUF_BAR2_OFF;
-	int fd = -1;
-	uint32_t mapped_size;
 	char *cmd = NULL;
 	uint period = VKCMD_MIN_DURATION_SEC * 1000;
 	char buf[VKCMD_OUT_BUF_SIZE];
 	struct timespec start_time, end_time;
+	size_t mmapped_size;
+	void *p_ctx_con;
 
 	static struct option long_options[] = {
-		{"cmd", required_argument, 0, 'c'},
 		{"dev", required_argument, 0, 'd'},
-		{"sec", required_argument, 0, 's'},
+		{"in", no_argument, 0, 'i'},
+		{"out", no_argument, 0, 'o'},
 		{0, 0, 0, 0}
 	};
 
@@ -89,24 +90,26 @@ int main(int argc, char **argv)
 		return -EINVAL;
 	}
 
-	fd = vcon_open_cmd_chan(dev_name, bar2_off, &mapped_size);
-	if (fd < 0) {
-		_PR_LINE("Fail to open communication channel - %s(%d)",
-			 strerror(-fd), fd);
+	ret = vcon_open_cmd_chan(&p_ctx_con,
+				 dev_name,
+				 &mmapped_size);
+	if (ret < 0) {
+		_PR_LINE("Fail to open command channel - %s(%d)",
+			 strerror(-errno), errno);
 		return -EINVAL;
 	}
 	_PR_LINE("VKCMD: %s @dev %s running %d ms \n",
 		 cmd, dev_name, period);
 
 	/* turn off coloring scheme */
-	ret = vcon_send_cmd(fd, VCON_COLOR_OFF);
+	ret = vcon_send_cmd(p_ctx_con, VCON_COLOR_OFF);
 	if (ret) {
 		_PR_LINE("Failure to turn color off, abort!\n");
 		goto free_and_exit;
 	}
 
 	/* send down cmd */
-	ret = vcon_send_cmd(fd, cmd);
+	ret = vcon_send_cmd(p_ctx_con, cmd);
 	if (ret) {
 		_PR_LINE("Failure to send down enable cmd @start - err %s\n",
 			 strerror(-ret));
@@ -119,7 +122,7 @@ int main(int argc, char **argv)
 	while (_ELAPSED_MS(end_time, start_time) < period) {
 		int i;
 
-		ret = vcon_get_cmd_output(buf, sizeof(buf));
+		ret = vcon_get_cmd_output(p_ctx_con, buf, sizeof(buf));
 		if (ret < 0) {
 			_PR_LINE("Error getting data from card, exit...\n");
 			goto free_and_exit;
@@ -136,7 +139,7 @@ int main(int argc, char **argv)
 	_PR_LINE("VKCMD: ends...\n");
 
 	/* turn color back on */
-	ret = vcon_send_cmd(fd, VCON_COLOR_ON);
+	ret = vcon_send_cmd(p_ctx_con, VCON_COLOR_ON);
 	if (ret) {
 		_PR_LINE("Failure to turn color back ON!\n");
 		goto free_and_exit;
@@ -147,10 +150,10 @@ free_and_exit:
 	if (ret)
 		_PR_LINE("Error to exit - %s(%d)\n", strerror(-ret), ret);
 
-	/* close communication channel in the end */
-	rc = vcon_close_cmd_chan();
+	/* close command channel in the end */
+	rc = vcon_close_cmd_chan(p_ctx_con);
 	if (rc)
-		_PR_LINE("Error closing channel fd %d - %s(%d)\n",
-			 fd, strerror(-rc), rc);
+		_PR_LINE("Error closing channel. handle %p - %s(%d)\n",
+			 p_ctx_con, strerror(-errno), errno);
 	return ret;
 }

@@ -86,6 +86,11 @@
 				(a) = (b); \
 			} while (0)
 
+#define FPR_FN(...)             do { \
+					fprintf(stdout, __VA_ARGS__); \
+					fflush(stdout); \
+				} while (0)
+
 #ifndef ARRAY_SIZE
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
 #endif
@@ -786,13 +791,15 @@ static int cmd_io(int fd,
 	/* default: 32 bit align */
 	int align = ALIGN_32_BIT;
 	char e_msg[MAX_ERR_MSG] = "";
-	int fnode = 0;
 	int *io_data = NULL;
 	int io_file = 0;
 	unsigned int len = 0;
 	int li = 0;
 	int lret;
-	struct map_info lmap_info = { {0, 0}, NULL, 0, 4096 };
+	struct map_info lmap_info = { {0, 0},
+				      -1,
+				      NULL,
+				      sysconf(_SC_PAGE_SIZE) };
 	off_t offset;
 	int ret = STATUS_OK;
 	int sys_ps = 0;
@@ -807,8 +814,7 @@ static int cmd_io(int fd,
 	}
 	offset = scmd_idx[SC_OFFSET];
 	lret = pcimem_init(path,
-			   &lmap_info,
-			   &fnode);
+			   &lmap_info);
 	if (lret < 0) {
 		PERROR("Fail to init pcimem for %s err: %d\n",
 		       path,
@@ -819,7 +825,6 @@ static int cmd_io(int fd,
 		/* default: word access - same as align */
 		len = align;
 		lret = pcimem_map_base(&lmap_info,
-				       fnode,
 				       offset,
 				       align);
 		if (lret < 0) {
@@ -842,7 +847,7 @@ static int cmd_io(int fd,
 		/* pcimem api allows accessing multiple locations */
 		/* vkcli supports one location only for now */
 		lret = pcimem_read(&lmap_info,
-				   0,
+				   offset,
 				   len,
 				   io_data,
 				   align);
@@ -861,7 +866,7 @@ static int cmd_io(int fd,
 		/* vkcli supports one location only for now */
 		*io_data = scmd_idx[SC_OFFSET + 1];
 		lret = pcimem_write(&lmap_info,
-				    0,
+				    offset,
 				    len,
 				    io_data,
 				    align);
@@ -879,8 +884,7 @@ static int cmd_io(int fd,
 	if (io_data != NULL)
 		free(io_data);
 	FPR_FN("\taccess bar done\n");
-	lret = pcimem_deinit(&lmap_info,
-			     &fnode);
+	lret = pcimem_deinit(&lmap_info);
 	S_LERR(ret, lret);
 	return ret;
 }
@@ -905,13 +909,15 @@ static int cmd_fio(int fd,
 	/* default: 32 bit align */
 	int align = ALIGN_32_BIT;
 	char e_msg[MAX_ERR_MSG] = "";
-	int fnode = 0;
 	int *io_data = NULL;
 	int io_file = 0;
 	unsigned int len = 0;
 	int li = 0;
 	int lret;
-	struct map_info lmap_info = { {0, 0}, NULL, 0, 4096 };
+	struct map_info lmap_info = { {0, 0},
+				      -1,
+				      NULL,
+				      sysconf(_SC_PAGE_SIZE) };
 	off_t offset;
 	int ret = STATUS_OK;
 	int sys_ps = 0;
@@ -926,8 +932,7 @@ static int cmd_fio(int fd,
 	}
 	offset = scmd_idx[SC_OFFSET];
 	lret = pcimem_init(path,
-			   &lmap_info,
-			   &fnode);
+			   &lmap_info);
 	if (lret < 0) {
 		PERROR("Fail to init pcimem for %s err: %d\n",
 		       path,
@@ -952,7 +957,6 @@ static int cmd_fio(int fd,
 		}
 		lmap_info.map_size = len;
 		lret = pcimem_map_base(&lmap_info,
-				       fnode,
 				       offset,
 				       align);
 		if (lret < 0)
@@ -961,7 +965,7 @@ static int cmd_fio(int fd,
 		S_LERR(ret, lret);
 		if (io_data && ret == STATUS_OK) {
 			lret = pcimem_blk_read(&lmap_info,
-					       0,
+					       offset,
 					       len,
 					       io_data,
 					       align);
@@ -1035,7 +1039,6 @@ static int cmd_fio(int fd,
 					len = lret;
 					lmap_info.map_size = len;
 					lret = pcimem_map_base(&lmap_info,
-							       fnode,
 							       offset,
 							       align);
 					S_LERR(ret, lret);
@@ -1045,7 +1048,7 @@ static int cmd_fio(int fd,
 					} else {
 						lret =
 						pcimem_blk_write(&lmap_info,
-								 0,
+								 offset,
 								 len,
 								 io_data,
 								 align);
@@ -1071,8 +1074,7 @@ static int cmd_fio(int fd,
 	if (io_data != NULL)
 		free(io_data);
 	FPR_FN("\taccess bar done\n");
-	lret = pcimem_deinit(&lmap_info,
-			     &fnode);
+	lret = pcimem_deinit(&lmap_info);
 	S_LERR(ret, lret);
 	return ret;
 }

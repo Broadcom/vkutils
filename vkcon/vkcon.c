@@ -30,19 +30,13 @@
  */
 
 /* local defines */
-#define VKCON_PROMPT              "\x1B[0mVK_CON # "
+#define VKCON_PROMPT			"\x1B[0mVK_CON # "
+#define VKCON_OUT_THREAD_SLEEP_US	10000  /* 10ms */
+#define VKCON_THREAD_CREATION_DELAY	500000 /* half a sec */
+#define VKCON_OUT_BUF_SIZE		(2 * 1024)
 
-#define VKCON_OUT_THREAD_SLEEP_US 10000 /* 10ms */
-
-#define VKCON_THREAD_CREATION_DELAY 500000 /* half a sec */
-
-#define VKCON_OUT_BUF_SIZE        (2 * 1024)
-
-static const char *true_false[2] = {"False", "True"};
-static bool out_thread_running;
-
-static pthread_mutex_t log_mutex = PTHREAD_MUTEX_INITIALIZER;
-#define _PR_F                     printf
+/* local macros */
+#define _PR_F  printf
 
 #define _PR_LINE(...)                      \
 {                                          \
@@ -51,9 +45,13 @@ static pthread_mutex_t log_mutex = PTHREAD_MUTEX_INITIALIZER;
 	pthread_mutex_unlock(&log_mutex);  \
 }
 
+static const char *true_false[2] = {"False", "True"};
+static pthread_mutex_t log_mutex = PTHREAD_MUTEX_INITIALIZER;
+static bool out_thread_running;
+
 /**
  * @brief Continuous output thread until the process is gone
- * @param arg thread arg, passed in pointer to log buffer
+ * @param arg thread arg, passed in device context
  */
 static void *output_thread(void *arg)
 {
@@ -64,7 +62,7 @@ static void *output_thread(void *arg)
 	_PR_LINE("VK Virtual Console Output starts:\n");
 	while (out_thread_running) {
 
-		ret = vcon_get_cmd_output(buf, sizeof(buf));
+		ret = vcon_get_cmd_output(arg, buf, sizeof(buf));
 		if (ret == 0) {
 			usleep(VKCON_OUT_THREAD_SLEEP_US);
 		} else if (ret < 0) {
@@ -89,10 +87,10 @@ static void *output_thread(void *arg)
 
 /**
  * @brief Continue loop for handling input from user
- * @param fd file descriptor
+ * @param dev device context
  * @param p_log_buf pointer to the logger structure
  */
-static void vcon_in_cmd_loop(int fd)
+static void vcon_in_cmd_loop(void *ctx)
 {
 	char line[VCON_MAX_CMD_SIZE];
 	char *p_char = line;
@@ -119,8 +117,8 @@ static void vcon_in_cmd_loop(int fd)
 		if (strcmp(p_char, "quit") == 0)
 			break;
 
-		ret = vcon_send_cmd(fd, p_char);
-		if (ret) {
+		ret = vcon_send_cmd(ctx, p_char);
+		if (ret < 0) {
 			_PR_LINE("Send Cmd Failure - %s(%d)\n",
 				 strerror(-ret), ret);
 			if (ret == -EACCES)
@@ -133,28 +131,27 @@ static void vcon_in_cmd_loop(int fd)
 int main(int argc, char **argv)
 {
 	int c;
+	char dev_name[FNAME_LEN];
 	int option_index;
+	uint32_t off = 0;
 	int32_t ret = -1;
-	char dev_name[30];
 	bool input_enable = false;
 	bool output_enable = false;
-	uint32_t bar2_off = VCON_BUF_BAR2_OFF;
 	pthread_attr_t attr;
+	size_t mmapped_size;
 	pthread_t output;
-	int fd = -1;
-	uint32_t mapped_size;
+	void *p_ctx_con;
 
 	static struct option long_options[] = {
 		{"dev", required_argument, 0, 'd'},
 		{"in", no_argument, 0, 'i'},
-		{"loc", required_argument, 0, 'l'},
 		{"out", no_argument, 0, 'o'},
 		{0, 0, 0, 0}
 	};
 
 	memset(dev_name, 0, sizeof(dev_name));
 
-	while ((c = getopt_long(argc, argv, "d:i:l:o:s:",
+	while ((c = getopt_long(argc, argv, "d:i:o:s:",
 				long_options, &option_index)) != -1) {
 		switch (c) {
 		case 'd':
@@ -168,9 +165,6 @@ int main(int argc, char **argv)
 		case 'i':
 			if (strcmp(VCON_ENABLE, optarg) == 0)
 				input_enable = true;
-			break;
-		case 'l':
-			bar2_off = strtoul(optarg, NULL, 0);
 			break;
 		case 'o':
 			if (strcmp(VCON_ENABLE, optarg) == 0)
@@ -193,20 +187,21 @@ int main(int argc, char **argv)
 
 		return -EINVAL;
 	}
-
-	fd = vcon_open_cmd_chan(dev_name, bar2_off, &mapped_size);
-	if (fd < 0) {
+	ret = vcon_open_cmd_chan(&p_ctx_con,
+				 dev_name,
+				 &mmapped_size);
+	if (ret < 0) {
 		_PR_LINE("Fail to open communication channel - %s(%d)\n",
-			 strerror(-fd), fd);
+			 strerror(-errno), errno);
 		return -EINVAL;
 	}
 
-	_PR_LINE("VKCON cmd chan open successful - offset 0x%x, size 0x%x\n",
-		 bar2_off, mapped_size);
+	_PR_LINE("VKCON cmd chan open successful - size %ld\n",
+		 mmapped_size);
 
 	/* send down an enable cmd anyway */
-	ret = vcon_send_cmd(fd, VCON_ENABLE);
-	if (ret) {
+	ret = vcon_send_cmd(p_ctx_con, VCON_ENABLE);
+	if (ret < 0) {
 		_PR_LINE("Failure to send down enable cmd @start - err %s\n",
 			 strerror(-ret));
 		goto free_and_exit;
@@ -214,7 +209,6 @@ int main(int argc, char **argv)
 
 	/* spawn logging thread if output enable */
 	if (output_enable) {
-
 		ret = pthread_attr_init(&attr);
 		if (ret) {
 			_PR_LINE("Error initializing output thread attr! %d\n",
@@ -222,7 +216,7 @@ int main(int argc, char **argv)
 			goto free_and_exit;
 		}
 		out_thread_running = true;
-		ret = pthread_create(&output, &attr, output_thread, NULL);
+		ret = pthread_create(&output, &attr, output_thread, p_ctx_con);
 		if (ret) {
 			_PR_LINE("Error creating output thread, %d\n", ret);
 			goto free_and_exit;
@@ -235,7 +229,7 @@ int main(int argc, char **argv)
 	/* drop to busy loop just for input  */
 	if (input_enable) {
 		_PR_LINE("VK Virtual Console Input starts:\n");
-		vcon_in_cmd_loop(fd);
+		vcon_in_cmd_loop(p_ctx_con);
 		_PR_LINE("VCON Input Exit...\n");
 	}
 
@@ -250,17 +244,17 @@ int main(int argc, char **argv)
 
 free_and_exit:
 	if (ret != -EACCES) {
-		ret = vcon_send_cmd(fd, VCON_DISABLE);
-		if (ret) {
+		ret = vcon_send_cmd(p_ctx_con, VCON_DISABLE);
+		if (ret < 0) {
 			_PR_LINE("VCON_DISABLE Send Cmd Failure - %s(%d)\n",
 				 strerror(-ret), ret);
 		}
 	}
 
 	/* close communication channel in the end */
-	ret = vcon_close_cmd_chan();
-	if (ret)
-		_PR_LINE("Error closing channel fd %d - %s(%d)\n",
-			 fd, strerror(-ret), ret);
+	ret = vcon_close_cmd_chan(p_ctx_con);
+	if (ret < 0)
+		_PR_LINE("Error closing channel. handle %p - %s(%d)\n",
+			 p_ctx_con, strerror(-errno), errno);
 	return ret;
 }

@@ -13,11 +13,6 @@
 #define STATUS_OK               0
 
 #define PAGE_RNDUP(x, s)        (((x) + (s) - 1) & ~((s) - 1))
-#define PR_FN                   printf
-#define FPR_FN(...)             do { \
-					fprintf(stdout, __VA_ARGS__); \
-					fflush(stdout); \
-				} while (0)
 
 /* transaction width - future use - all is 32 bit for now */
 enum bit_align {
@@ -34,45 +29,42 @@ struct id_info {
 
 struct map_info {
 	struct id_info d_id;
+	int fd;
 	void *map_base;
-	off_t off_base;
-	uint64_t map_size;
+	off_t map_size;
 };
 
 int pcimem_init(char * const device_name,
-		struct map_info *p_info,
-		int *pfd);
+		struct map_info *p_info);
 
 int pcimem_map_base(struct map_info *p_info,
-		    const int fd,
 		    const off_t target,
 		    const int type_width);
 
-int pcimem_blk_read(const struct map_info *p_info,
+int pcimem_blk_read(struct map_info const *p_info,
 		    const off_t target,
 		    const int d_size,
 		    void *p_data,
 		    const int type_width);
 
-int pcimem_blk_write(const struct map_info *p_info,
+int pcimem_blk_write(struct map_info const *p_info,
 		     const off_t target,
 		     const int d_size,
 		     void *p_data,
 		     const int type_width);
 
-int pcimem_read(const struct map_info *p_info,
+int pcimem_read(struct map_info const *p_info,
 		const off_t target,
 		const int d_size,
 		void *p_data,
 		const int type_width);
 
-int pcimem_write(const struct map_info *p_info,
+int pcimem_write(struct map_info const *p_info,
 		 const off_t target,
 		 const int d_size,
 		 void *p_data,
 		 const int type_width);
 
-int pcimem_deinit(struct map_info *p_info,
-		  int *pfd);
+int pcimem_deinit(struct map_info *p_info);
 
 #endif /* PCIMEM_API_H */
