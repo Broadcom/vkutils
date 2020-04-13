@@ -44,8 +44,10 @@
 #define VCON_IN_CMD_POLL_MAX     10 /* max polls before timeout */
 
 /* command doorbell notification definitions */
+#define VCON_BOOT_STATUS_OFFSET  0x404
 #define VCON_CMD_DB_OFFSET       0x49c
 #define VCON_CMD_DB_VAL          0xFFFFFFF0
+#define VCON_BOOT2_RUNNING       0x100006
 
 #define MAX_MMAP_SIZE            (2 * 1024 * 1024)
 
@@ -184,7 +186,7 @@ int vcon_send_cmd(int fd, const char *cmd)
 	*cmd_chan = VCON_CMD_CHAN_OCCUPIED; /* mark it to be valid */
 	/* press door bell */
 	rc = pcimem_write(&cmd_map_info,
-			  0,
+			  VCON_CMD_DB_OFFSET,
 			  len,
 			  &data,
 			  ALIGN_32_BIT);
@@ -225,6 +227,7 @@ int vcon_open_cmd_chan(const char *dev_name, uint32_t offset,
 	char *node_num = NULL;
 	off_t bar0_off, bar2_off;
 	int ret = -EINVAL;
+	uint32_t boot_status;
 
 	/* open device */
 	if (strlen(dev_name) > 3) {
@@ -237,8 +240,39 @@ int vcon_open_cmd_chan(const char *dev_name, uint32_t offset,
 	} else {
 		node_num = (char *)dev_name;
 	}
-	string2ul(node_num, &fnode);
 
+	/* Need bar 0 also mapped for sending commands */
+	bar = 0;
+	string2ul(node_num, &fnode);
+	snprintf(devnode,
+		 sizeof(devnode),
+		 DEV_SYSFS_NAME ".%ld" DEV_SYS_RESOURCE "%d",
+		 fnode, 2 * bar);
+	pcimem_init(devnode, &cmd_map_info, (int *)&fnode);
+
+	/* map the first 4k so that all registers there could be accessed */
+	bar0_off = 0;
+	ret = pcimem_map_base(&cmd_map_info,
+			      fnode,
+			      bar0_off,
+			      sizeof(uint32_t));
+	if (ret < 0) {
+		PR_FN("fail to mmap BAR 0\n");
+		return -EINVAL;
+	}
+
+	/* read boot-status */
+	ret = pcimem_blk_read(&cmd_map_info, VCON_BOOT_STATUS_OFFSET,
+			      sizeof(boot_status), &boot_status,
+			      sizeof(boot_status));
+	if ((ret < 0) || (boot_status != VCON_BOOT2_RUNNING)) {
+		PR_FN("Card not in proper status 0x%x - ret(%d)\n",
+		      boot_status, ret);
+		return -EINVAL;
+	}
+
+	bar = 2;
+	string2ul(node_num, &fnode);
 	snprintf(devnode,
 		 sizeof(devnode),
 		 DEV_SYSFS_NAME ".%ld" DEV_SYS_RESOURCE "%d",
@@ -251,7 +285,7 @@ int vcon_open_cmd_chan(const char *dev_name, uint32_t offset,
 			      bar2_off,
 			      sizeof(uint32_t));
 	if (ret < 0) {
-		PR_FN("fail to mmap\n");
+		PR_FN("fail to mmap BAR 2\n");
 		return -EINVAL;
 	}
 	/* do mmap & map it to our struct */
@@ -285,20 +319,6 @@ int vcon_open_cmd_chan(const char *dev_name, uint32_t offset,
 	*p_mapped_size = chan_map_info.map_size;
 	rd_idx = p_log_buf->spool_idx;
 
-	/* Need bar 0 also mapped for sending commands */
-	bar = 0;
-	memset(devnode, 0, sizeof(devnode));
-	string2ul(node_num, &fnode);
-	snprintf(devnode,
-		 sizeof(devnode),
-		 DEV_SYSFS_NAME ".%ld" DEV_SYS_RESOURCE "%d",
-		 fnode, 2 * bar);
-	pcimem_init(devnode, &cmd_map_info, (int *)&fnode);
-	bar0_off = VCON_CMD_DB_OFFSET;
-	ret = pcimem_map_base(&cmd_map_info,
-			      fnode,
-			      bar0_off,
-			      sizeof(uint32_t));
 	return ret;
 }
 
