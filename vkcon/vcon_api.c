@@ -17,6 +17,7 @@
 
 #include "bcm_vk.h"
 #include "vcon_api.h"
+#include "vcon_chan_intf.h"
 #include "pcimem.h"
 
 /**
@@ -39,7 +40,6 @@ enum chan_state {
 };
 
 /* local defines */
-#define VCON_MARKER		0xbeefcafe
 
 #define VCON_IN_CMD_POLL_US	(100 * 1000) /* 100ms */
 #define VCON_IN_CMD_POLL_MAX	10 /* max polls before timeout */
@@ -71,21 +71,6 @@ enum chan_state {
 				e_msg);\
 			fflush(stderr);\
 			} while (0)
-
-/**
- * interface structure, and this has to match the VK side definition.
- * we only care about the spooled part.
- */
-typedef struct _logger_buf {
-	uint32_t marker;          /**< marker to indicate if VK has init */
-	uint32_t cmd_off;         /**< offset of cmd buffer from start */
-
-	/*-------------------------------------------------------------------*/
-	uint32_t spool_nentries;  /**< total of spool entries  */
-	uint32_t spool_len;       /**< length of per spooled entry */
-	uint32_t spool_off;       /**< offset of spooled buffer from start */
-	uint32_t spool_idx;       /**< idx of the next spooled buffer */
-} logger_buf;
 
 typedef struct _dev_ctx {
 	int fd;

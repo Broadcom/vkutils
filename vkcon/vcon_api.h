@@ -18,9 +18,6 @@
 #define VCON_MAX_CMD_SIZE	127
 #define VCON_CMD_CHAN_SIZE	(VCON_MAX_CMD_SIZE + 1)
 
-/* device node path max size */
-#define FNAME_LEN		64
-
 int vcon_open_cmd_chan(void **ctx,
 		       const char *dev_name,
 		       size_t *mapped_size);

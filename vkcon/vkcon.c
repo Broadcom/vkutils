@@ -18,6 +18,7 @@
 
 #include "bcm_vk.h"
 #include "vcon_api.h"
+#include "vcon_chan_intf.h"
 
 /**
  * @file
