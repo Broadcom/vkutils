@@ -29,7 +29,7 @@
 #include "pcimem.h"
 
 /* internal defines */
-#define NODE_NOT_OPEN			0xFF
+#define NODE_NOT_FOUND			0xFF
 
 /* internal structures */
 struct map_list {
@@ -174,7 +174,47 @@ static int is_device_open(struct map_info *p_info,
 		p_elem = p_elem->next;
 	}
 	if (!found)
-		return NODE_NOT_OPEN;
+		return NODE_NOT_FOUND;
+	*p_map_list = p_elem;
+	return STATUS_OK;
+}
+
+/**
+ * @brief find_mapping check if we have a mapping for current request
+ *
+ * @param[in] p_info  - id of node
+ * @param[out] points to the element identified as already open
+ *
+ * @return STATUS_OK on success, error code otherwise
+ */
+static int find_mapping(struct map_info const *p_info,
+			const off_t offset,
+			const int d_size,
+			struct map_list **p_map_list)
+{
+	int ret, found = 0;
+	struct map_list *p_elem;
+
+	if (!p_info || !p_map_list)
+		return -EINVAL;
+
+	*p_map_list = NULL;
+	p_elem = p_crt_mappings;
+	while (p_elem) {
+		ret = memcmp(&p_elem->d_id,
+			     &p_info->d_id,
+			     sizeof(p_info->d_id));
+		if (ret == 0 && p_elem->fd > 0) {
+			if (offset >= p_elem->base &&
+			    offset + d_size <= p_elem->base + p_elem->size) {
+				found = 1;
+				break;
+			}
+		}
+		p_elem = p_elem->next;
+	}
+	if (!found)
+		return NODE_NOT_FOUND;
 	*p_map_list = p_elem;
 	return STATUS_OK;
 }
@@ -234,40 +274,6 @@ static int del_elem_map_list(struct map_list *p_map_node)
 		head->next = p_map_node->next;
 		free(p_map_node);
 		p_map_node = NULL;
-	}
-	return STATUS_OK;
-}
-
-/**
- * @brief check_range memory range check
- *
- * @param[in] p_info->map_base - base address mapped in user space
- * @param[in] p_info->map_size - length of memory mapped region
- * @param[in] offset - offset from base to access
- *
- * @return STATUS_OK on success, error code otherwise
- */
-static int check_range(struct map_info const *p_info, off_t offset)
-{
-	void *virt_addr;
-	void *end_map_addr;
-	off_t mapped_size;
-	struct id_info const *p_did;
-
-	if (!p_info || offset < 0)
-		return -EINVAL;
-
-	p_did = &p_info->d_id;
-	virt_addr = p_info->map_base + offset;
-	mapped_size = PAGE_RNDUP(p_info->map_size,
-				 sysconf(_SC_PAGE_SIZE));
-	end_map_addr = p_info->map_base + mapped_size;
-	if (virt_addr >= end_map_addr) {
-		FPR_FN("ERR_RANGE: start / end:\n%p\n%p\n",
-		       virt_addr,
-		       end_map_addr);
-		PRINT_ERROR(p_did);
-		return -EINVAL;
 	}
 	return STATUS_OK;
 }
@@ -390,36 +396,39 @@ int pcimem_read(struct map_info const *p_info,
 		void *p_data,
 		const int type_width)
 {
-	int res;
 	struct id_info const *p_did;
+	struct map_list *p_elem;
+	int res;
 	void *virt_addr;
 
 	if (!p_info || !p_data)
 		return -EINVAL;
 
 	p_did = &p_info->d_id;
-	res = check_range(p_info, offset);
+	res = find_mapping(p_info, offset, d_size, &p_elem);
 	if (res < 0) {
 		PRINT_ERROR(p_did);
 		return -EINVAL;
 	}
-	virt_addr = p_info->map_base + offset;
-	switch (type_width) {
-	case ALIGN_8_BIT:
-		*(uint8_t *)p_data = *((uint8_t *)virt_addr);
-		break;
-	case ALIGN_16_BIT:
-		*(uint16_t *)p_data = *((uint16_t *)virt_addr);
-		break;
-	case ALIGN_32_BIT:
-		*(uint32_t *)p_data = *((uint32_t *)virt_addr);
-		break;
-	case ALIGN_64_BIT:
-		*(uint64_t *)p_data = *((uint64_t *)virt_addr);
-		break;
-	default:
-		PRINT_ERROR(p_did);
-		return -EINVAL;
+	if (p_elem) {
+		virt_addr = p_elem->p_mapping + offset - p_elem->base;
+		switch (type_width) {
+		case ALIGN_8_BIT:
+			*(uint8_t *)p_data = *((uint8_t *)virt_addr);
+			break;
+		case ALIGN_16_BIT:
+			*(uint16_t *)p_data = *((uint16_t *)virt_addr);
+			break;
+		case ALIGN_32_BIT:
+			*(uint32_t *)p_data = *((uint32_t *)virt_addr);
+			break;
+		case ALIGN_64_BIT:
+			*(uint64_t *)p_data = *((uint64_t *)virt_addr);
+			break;
+		default:
+			PRINT_ERROR(p_did);
+			return -EINVAL;
+		}
 	}
 	return STATUS_OK;
 }
@@ -442,6 +451,7 @@ int pcimem_write(struct map_info const *p_info,
 		 const int type_width)
 {
 	struct id_info const *p_did;
+	struct map_list *p_elem;
 	int res;
 	uint64_t read_result = -1;
 	void *virt_addr;
@@ -450,38 +460,39 @@ int pcimem_write(struct map_info const *p_info,
 		return -EINVAL;
 
 	p_did = &p_info->d_id;
-	res = check_range(p_info, offset);
+	res = find_mapping(p_info, offset, d_size, &p_elem);
 	if (res < 0) {
 		PRINT_ERROR(p_did);
 		return -EINVAL;
 	}
-	virt_addr = p_info->map_base + offset;
-	switch (type_width) {
-	case ALIGN_8_BIT:
-		*((uint8_t *)virt_addr) = *(uint8_t *)p_data;
-		read_result = *((uint8_t *)virt_addr);
-		break;
-	case ALIGN_16_BIT:
-		*((uint16_t *)virt_addr) = *(uint16_t *)p_data;
-		read_result = *((uint16_t *)virt_addr);
-		break;
-	case ALIGN_32_BIT:
-		*((uint32_t *)virt_addr) = *(uint32_t *)p_data;
-		read_result = *((uint32_t *)virt_addr);
-		break;
-	case ALIGN_64_BIT:
-		*((uint64_t *)virt_addr) = *(uint64_t *)p_data;
-		read_result = *((uint64_t *)virt_addr);
-		break;
-	default:
-		PRINT_ERROR(p_did);
-		return -EINVAL;
+	if (p_elem) {
+		virt_addr = p_elem->p_mapping + offset - p_elem->base;
+		switch (type_width) {
+		case ALIGN_8_BIT:
+			*((uint8_t *)virt_addr) = *(uint8_t *)p_data;
+			read_result = *((uint8_t *)virt_addr);
+			break;
+		case ALIGN_16_BIT:
+			*((uint16_t *)virt_addr) = *(uint16_t *)p_data;
+			read_result = *((uint16_t *)virt_addr);
+			break;
+		case ALIGN_32_BIT:
+			*((uint32_t *)virt_addr) = *(uint32_t *)p_data;
+			read_result = *((uint32_t *)virt_addr);
+			break;
+		case ALIGN_64_BIT:
+			*((uint64_t *)virt_addr) = *(uint64_t *)p_data;
+			read_result = *((uint64_t *)virt_addr);
+			break;
+		default:
+			PRINT_ERROR(p_did);
+			return -EINVAL;
+		}
+		if (read_result != *(uint64_t *)p_data) {
+			PRINT_ERROR(p_did);
+			return -EINVAL;
+		}
 	}
-	if (read_result != *(uint64_t *)p_data) {
-		PRINT_ERROR(p_did);
-		return -EINVAL;
-	}
-
 	return STATUS_OK;
 }
 
@@ -504,6 +515,7 @@ int pcimem_blk_read(struct map_info const *p_info,
 		    const int type_width)
 {
 	struct id_info const *p_did;
+	struct map_list *p_elem;
 	int res = -EINVAL;
 	void *virt_addr;
 
@@ -511,19 +523,16 @@ int pcimem_blk_read(struct map_info const *p_info,
 		return -EINVAL;
 
 	p_did = &p_info->d_id;
-	res = check_range(p_info, offset);
+	res = find_mapping(p_info, offset, d_size, &p_elem);
 	if (res < 0) {
 		PRINT_ERROR(p_did);
 		return -EINVAL;
 	}
-	res = check_range(p_info, offset + d_size - 1);
-	if (res < 0) {
-		PRINT_ERROR(p_did);
-		return -EINVAL;
+	if (p_elem) {
+		virt_addr = p_elem->p_mapping + offset - p_elem->base;
+		memcpy(p_data, virt_addr, d_size);
+		res = STATUS_OK;
 	}
-	virt_addr = p_info->map_base + offset;
-	memcpy(p_data, virt_addr, d_size);
-	res = STATUS_OK;
 	return res;
 }
 
@@ -546,6 +555,7 @@ int pcimem_blk_write(struct map_info const *p_info,
 		     const int type_width)
 {
 	struct id_info const *p_did;
+	struct map_list *p_elem;
 	int res = -EINVAL;
 	void *virt_addr;
 
@@ -553,24 +563,20 @@ int pcimem_blk_write(struct map_info const *p_info,
 		return -EINVAL;
 
 	p_did = &p_info->d_id;
-	res = check_range(p_info, offset);
+	res = find_mapping(p_info, offset, d_size, &p_elem);
 	if (res < 0) {
 		PRINT_ERROR(p_did);
 		return -EINVAL;
 	}
-	res = check_range(p_info, offset + d_size - 1);
-	if (res < 0) {
-		PRINT_ERROR(p_did);
-		return -EINVAL;
+	if (p_elem) {
+		virt_addr = p_elem->p_mapping + offset - p_elem->base;
+		memcpy(virt_addr, p_data, d_size);
+		if (memcmp(p_data, virt_addr, d_size) != 0) {
+			PRINT_ERROR(p_did);
+			return -EINVAL;
+		}
 	}
-	virt_addr = p_info->map_base + offset;
-	memcpy(virt_addr, p_data, d_size);
-	if (memcmp(p_data, virt_addr, d_size) != 0) {
-		PRINT_ERROR(p_did);
-		return -EINVAL;
-	}
-	res = STATUS_OK;
-	return res;
+	return STATUS_OK;
 }
 
 /**
