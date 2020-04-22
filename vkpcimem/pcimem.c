@@ -59,11 +59,15 @@ struct map_list {
 		} \
 	} while(0)
 
+#if defined(MMAP_DEBUG)
 #define FPR_FN(...) \
 	do { \
 		fprintf(stdout, __VA_ARGS__); \
 		fflush(stdout); \
 	} while (0)
+#else
+#define FPR_FN(...)
+#endif
 
 /* internal variables */
 static struct map_list *p_crt_mappings;
