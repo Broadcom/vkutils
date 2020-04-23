@@ -42,7 +42,8 @@ enum chan_state {
 /* local defines */
 
 #define VCON_IN_CMD_POLL_US	(100 * 1000) /* 100ms */
-#define VCON_IN_CMD_POLL_MAX	10 /* max polls before timeout */
+#define VCON_IN_CMD_TIMEOUT_US	(5 * 1000000) /* 5s timeout */
+#define VCON_IN_CMD_POLL_MAX	(VCON_IN_CMD_TIMEOUT_US / VCON_IN_CMD_POLL_US)
 #define MAX_ERR_MSG		255
 
 /* command doorbell notification definitions */
