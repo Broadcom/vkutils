@@ -48,6 +48,10 @@ enum chan_state {
 
 /* command doorbell notification definitions */
 #define VCON_BOOT_STATUS_OFFSET	0x404
+#define VCON_FW_STATUS_OFFSET	0x41c
+#define VCON_FW_STATUS_ALL_RDY	0x3ff
+#define VCON_FW_STATUS_OK(reg)	\
+	(((reg) & VCON_FW_STATUS_ALL_RDY) == VCON_FW_STATUS_ALL_RDY)
 #define VCON_CMD_DB_OFFSET	0x49c
 #define VCON_CMD_DB_VAL		0xFFFFFFF0
 /* default log region offset value, could be overwritten by user */
@@ -359,7 +363,7 @@ int vcon_open_cmd_chan(void **ctx,
 	logger_buf *p_log_buf;
 	int ret = STATUS_OK;
 	unsigned long new_size;
-	uint32_t boot_status;
+	uint32_t boot_status, fw_status;
 
 	if (!ctx || !dev_name || !mmap_size) {
 		PERROR("invalid parameters\n");
@@ -402,6 +406,20 @@ int vcon_open_cmd_chan(void **ctx,
 	if ((ret < 0) || (boot_status != VCON_BOOT2_RUNNING)) {
 		PERROR("Card not in proper status 0x%x - ret(%d)\n",
 		       boot_status, ret);
+		free(p_dev);
+		vcon_close_cmd_chan(p_ctx);
+		return -EINVAL;
+	}
+
+	/* read firmware-status */
+	ret = pcimem_blk_read(p_dev->m_info,
+			      VCON_FW_STATUS_OFFSET,
+			      sizeof(fw_status),
+			      &fw_status,
+			      ALIGN_32_BIT);
+	if ((ret < 0) || !VCON_FW_STATUS_OK(fw_status)) {
+		PERROR("FW status 0x%x not ready, exp[0x%x] - ret(%d)\n",
+		       fw_status, VCON_FW_STATUS_ALL_RDY, ret);
 		free(p_dev);
 		vcon_close_cmd_chan(p_ctx);
 		return -EINVAL;
