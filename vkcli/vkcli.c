@@ -750,8 +750,8 @@ static int cmd_res(int fd,
 	int ret;
 	struct vk_reset reset;
 
-	reset.arg1 = 0;
-	reset.arg2 = 0;
+	reset.arg1 = 0; /* input reset type */
+	reset.arg2 = 0; /* clear returned arg from card */
 	FPR_FN("Issue command %s\n",
 	       cmd_lookup_tbl[cmd_idx].cmd_name);
 
@@ -768,6 +768,13 @@ static int cmd_res(int fd,
 		PERROR("VK_IOCTL_RESET failed 0x%x Dev: %s\n", errno, path);
 		return -errno;
 	}
+	/*
+	 * check if driver returns non-zero which indicates special ramdump
+	 * mode.  This is the only use case for now.
+	 */
+	if (reset.arg2)
+		FPR_FN("VK_IOCTL_RESET ramdump mode, PCIe rescan required!\n");
+
 	return STATUS_OK;
 }
 
