@@ -69,6 +69,11 @@
 #define MAX_SYS_PATH		200
 #define TEST_NODE		0xFFFFFFFF
 
+/* defines for register representing card */
+#define BOOT_STATUS_REG 0x404
+#define BOOT_STATUS_UCODE_NOT_RUN 0x10002
+#define BOOT_STATUS_BAR_NUM 0
+
 /* local macros */
 #define PERROR(...) do { \
 			snprintf(e_msg, \
@@ -112,7 +117,9 @@ enum arg_index {
 
 enum scmd_index {
 	SC_BAR = ARG_PARAM1 - ARG_CMD,
-	SC_OFFSET
+	SC_OFFSET,
+	SC_VAL,
+	SC_MAX
 };
 
 /* supported command IDs */
@@ -751,6 +758,30 @@ static int cmd_res(int fd,
 	int ret;
 	struct vk_reset reset;
 
+	/* if not forced, check for boot status */
+	if (strcmp(cmd_param_tbl[ARG_PARAM1], attr_lookup_tbl[CMD_RESET].scmds[0])) {
+		char pcie_res[MAX_SYS_PATH];
+		int val;
+		int scmd[SC_MAX];
+
+		/* reset not allowed if UCODE is not even running */
+		val = atoi(strstr(path, ".") + 1);
+		ret = cmd_node_lookup(val, BOOT_STATUS_BAR_NUM, CMD_MODE_EXEC,
+				      CMD_READ_BIN, pcie_res,
+				      NULL);
+		if (ret) {
+			PERROR("Fail to get PCIe info: %s\n", path);
+			return -EINVAL;
+		}
+		scmd[SC_OFFSET] = BOOT_STATUS_REG;
+		val = cmd_io(fd, CMD_READ_BIN, scmd, 2 /* 2 param */, pcie_res);
+		if (val || (scmd[SC_VAL] == BOOT_STATUS_UCODE_NOT_RUN)) {
+			PERROR("Reset skipped - UCODE not running(0x%x)\n",
+			       scmd[SC_VAL]);
+			return -EINVAL;
+		}
+	}
+
 	reset.arg1 = 0; /* input reset type */
 	reset.arg2 = 0; /* clear returned arg from card */
 	FPR_FN("Issue command %s\n",
@@ -859,20 +890,22 @@ static int cmd_io(int fd,
 				   len,
 				   io_data,
 				   align);
-		if (lret < 0)
+		if (lret < 0) {
 			PERROR("%s: bad rd; err=0x%x\n",
 			       ucmd->cmd_name,
 			       lret);
-		else
+		} else {
 			FPR_FN("0x%04lX: 0x%0*X\n",
 			       offset,
 			       2 * align,
 			       *io_data);
+			scmd_idx[SC_VAL] = *io_data;
+		}
 		break;
 	case CMD_WRITE_BIN:
 		/* pcimem api allows accessing multiple locations */
 		/* vkcli supports one location only for now */
-		*io_data = scmd_idx[SC_OFFSET + 1];
+		*io_data = scmd_idx[SC_VAL];
 		lret = pcimem_write(&lmap_info,
 				    offset,
 				    len,
