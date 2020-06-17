@@ -589,8 +589,9 @@ static int scmd_get_param(int cmd_cnt,
 					tot_cnt++;
 					scmd_idx[tot_cnt] = idx - ARG_CMD - val;
 					break;
-				} else if (strcmp(ca->scmds[i],
-						  cmd_param_tbl[idx]) == 0) {
+				} else if (ca->scmds[i] &&
+					   (strcmp(ca->scmds[i],
+						   cmd_param_tbl[idx]) == 0)) {
 					scmd_idx[0] = i;
 					val = idx - ARG_CMD;
 					ret = STATUS_OK;
