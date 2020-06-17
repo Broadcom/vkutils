@@ -196,8 +196,8 @@ static struct node_unit node_lookup_tbl[] = {
 static struct cmd_attributes attr_lookup_tbl[] = {
 /*	SUB_CMD(s)                CLASS,    MIN_P, MAX_P */
 	{ { "" },                   MAX_CMDS,     0, 0 },
-	{ { "" },                   CTRL_CMDS,    0, 0 },
-	{ {"boot1", "boot2", "-"},  CTRL_CMDS,    1, 3 },
+	{ { "force" },              CTRL_CMDS,    0, 1 },
+	{ { "boot1", "boot2", "-"}, CTRL_CMDS,    1, 3 },
 	{ { "" },                   IO_AXS_CMDS,  2, 2 },
 	{ { "" },                   IO_AXS_CMDS,  3, 3 },
 	{ { "" },                   FIO_AXS_CMDS, 4, 4 },
