@@ -45,4 +45,4 @@ mv ddr_dump.bin ddr_dump_$(date +%Y%m%d-%H%M%S).bin
 rm -rf ddr_dump_t.bin
 sync
 echo "RAMDUMP DONE"
-echo "To reset the card execute: vkcli /dev/bcm-vk.<dev_num> wb 0 0x41c 0xa0000000"
+echo "To reset the card execute: vkcli /dev/bcm-vk.<dev_num> reset"
