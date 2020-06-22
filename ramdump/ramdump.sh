@@ -12,7 +12,7 @@
 
 if [[ $1 == "--help" || $# -gt 2 ]]
 then
-        echo "Usage: ./ramdump.sh [dev_num] [full]"
+        echo "Usage: ./${0} [dev_num] [full]"
         echo -e ' \n\t '"dev_num: 0..11 - corresponds to /dev/bcm-vk.X; w/o dev_num = 0"
         echo -e ' \t '"full: to capture full 2GB RAM image; w/o limit to first 64MB"
         echo -e ' \n '
@@ -26,6 +26,16 @@ if [[ $# -ge 1 ]]
 then
         dev_id=$1
 fi
+
+ramdump_mode=$(cat "/sys/class/misc/bcm-vk.${dev_id}/pci/vk-card-mon/alert_ramdump")
+if [[ "$ramdump_mode" -eq "0" ]]
+then
+        echo "selected device ${dev_id} is not in RAMDUMP mode"
+        echo "RAMDUMP EXIT"
+        exit 0
+fi
+
+
 echo "Dumping DTCM.."
 $VKCLI $dev_id rf 1 0x0 0x40000 dtcm_dump_$(date +%Y%m%d-%H%M%S)_BCM_$dev_id.bin
 echo "Dumping ITCM.."
