@@ -802,10 +802,10 @@ static int cmd_res(int fd,
 	}
 	/*
 	 * check if driver returns non-zero which indicates special ramdump
-	 * mode.  This is the only use case for now.
+	 * or standalone mode, where rescan is needed.  Inform user.
 	 */
 	if (reset.arg2)
-		FPR_FN("VK_IOCTL_RESET ramdump mode, PCIe rescan required!\n");
+		FPR_FN("VK_IOCTL_RESET ramdump/standalone mode, PCIe rescan required!\n");
 
 	return STATUS_OK;
 }
