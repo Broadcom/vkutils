@@ -42,6 +42,8 @@ echo "Dumping ITCM.."
 $VKCLI $dev_id rf 1 0x100000 0x40000 itcm_dump_$(date +%Y%m%d-%H%M%S)_BCM_$dev_id.bin
 echo "Dumping SCR SRAM.."
 $VKCLI $dev_id rf 1 0x200000 0x40000 scr_sram_dump_$(date +%Y%m%d-%H%M%S)_BCM_$dev_id.bin
+echo "Dumping A72 console log.."
+$VKCLI $dev_id rf 1 0x600000 0x100000 a72_console_dump_$(date +%Y%m%d-%H%M%S)_BCM_$dev_id.log
 
 echo "Dumping DDR.."
 # set the pcie window to default map base 0x60000000
