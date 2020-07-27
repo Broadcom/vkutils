@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
@@ -50,7 +51,7 @@ int main(int argc, char **argv)
 	int32_t ret = -1, rc;
 	char *dev_name = NULL;
 	char *cmd = NULL;
-	uint period = VKCMD_MIN_DURATION_SEC * 1000;
+	uint32_t period = VKCMD_MIN_DURATION_SEC * 1000;
 	char buf[VKCMD_OUT_BUF_SIZE];
 	struct timespec start_time, end_time;
 	size_t mmapped_size;

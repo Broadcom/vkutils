@@ -134,7 +134,6 @@ int main(int argc, char **argv)
 	int c;
 	char dev_name[FNAME_LEN];
 	int option_index;
-	uint32_t off = 0;
 	int32_t ret = -1;
 	bool input_enable = false;
 	bool output_enable = false;

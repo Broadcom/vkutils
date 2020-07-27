@@ -96,10 +96,15 @@ typedef struct _con_ctx {
 	cmd_channel *p_cmd;
 } con_ctx;
 
+static int vcon_mem_map_node(dev_ctx **ctx,
+			     const char *dev_name,
+			     int bar,
+			     uint32_t offset,
+			     uint32_t size);
+
 static int string2ul(char *str, unsigned long *return_value)
 {
 	char *endptr = NULL;
-	char e_msg[MAX_ERR_MSG] = "";
 
 	if (str == NULL || return_value == NULL)
 		return -EINVAL;
@@ -264,16 +269,15 @@ tx_success:
  * @param offset offset in BAR where mapping should start
  * @return STATUS_OK, or negative error value
  */
-int vcon_mem_map_node(dev_ctx **ctx,
-		      const char *dev_name,
-		      int bar,
-		      uint32_t offset,
-		      uint32_t size)
+static int vcon_mem_map_node(dev_ctx **ctx,
+			     const char *dev_name,
+			     int bar,
+			     uint32_t offset,
+			     uint32_t size)
 {
 	char devnode[FNAME_LEN];
 	char e_msg[MAX_ERR_MSG] = "";
 	unsigned long fnode = 0;
-	int fd = -1;
 	dev_ctx *p_dev;
 	char *node_num = NULL;
 	int ret = -EINVAL;
