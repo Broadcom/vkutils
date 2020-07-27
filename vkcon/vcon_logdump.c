@@ -16,7 +16,8 @@
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 
-#include "vcon_chan_intf.h"
+#include "vcon_api.h"
+#include "vkutil_msg.h"
 
 #define _PR_LINE	printf
 #define banner		"==============================================\n"
@@ -28,9 +29,9 @@
 
 static int parse_console_log(char *f_name)
 {
+	char e_msg[MAX_ERR_MSG] = "";
 	FILE *fp;
 	int ret;
-	long offset;
 	long rd_idx;
 	long wr_idx;
 	char c;
@@ -38,20 +39,19 @@ static int parse_console_log(char *f_name)
 
 	fp = fopen(f_name, "r");
 	if (!fp) {
-		_PR_LINE("Fail to open: %s error: %s\n",
-			 f_name, strerror(errno));
+		PERROR("Fail to open file; error: %d\n", errno);
 		return errno;
 	}
 
 	ret = fseek(fp, 0, SEEK_SET);
 	if (ret < 0) {
-		_PR_LINE("Console header fseek failed: %s\n", strerror(errno));
+		PERROR("Console header fseek failed: %d\n", ret);
 		goto fail;
 	}
 
 	ret = fread(&clog, sizeof(console_buf), 1, fp);
 	if (ret <= 0) {
-		_PR_LINE("Console header fread failed: %s\n", strerror(errno));
+		PERROR("Console header fread failed: %d\n", ret);
 		goto fail;
 	}
 
@@ -63,13 +63,13 @@ static int parse_console_log(char *f_name)
 
 	/* sanity check the header info */
 	if (clog.size != (MAX_CONSOLE_LEN - CONSOLE_ADDR(data))) {
-		_PR_LINE("Console header size is invalid!\n");
+		PERROR("Console header size is invalid!\n");
 		ret = -EINVAL;
 		goto fail;
 	}
 
 	if (clog.rd > clog.size || clog.wr > clog.size) {
-		_PR_LINE("Console header wr idx or/and rd idx invalid!\n");
+		PERROR("Console header wr idx or/and rd idx invalid!\n");
 		ret = -EINVAL;
 		goto fail;
 	}
@@ -80,7 +80,7 @@ static int parse_console_log(char *f_name)
 	rd_idx =  (rd_idx >= MAX_CONSOLE_LEN ? CONSOLE_ADDR(data) : rd_idx);
 	ret = fseek(fp, rd_idx, SEEK_SET);
 	if (ret < 0) {
-		_PR_LINE("Console data fseek failed: %s\n", strerror(errno));
+		PERROR("Console data fseek failed: %d\n", ret);
 		goto fail;
 	}
 
@@ -92,8 +92,7 @@ static int parse_console_log(char *f_name)
 			rd_idx = CONSOLE_ADDR(data);
 			ret = fseek(fp, rd_idx, SEEK_SET);
 			if (ret < 0) {
-				_PR_LINE("Console fseek at %ld failed: %s\n",
-					 offset, strerror(errno));
+				PERROR("Console fseek at failed: %d\n", ret);
 				goto fail;
 			}
 		}
@@ -109,6 +108,7 @@ fail:
 
 static int parse_logger(char *f_name)
 {
+	char e_msg[MAX_ERR_MSG] = "";
 	FILE *fp;
 	long offset = VCON_BUF_BAR2_OFF;
 	logger_buf log;
@@ -116,20 +116,20 @@ static int parse_logger(char *f_name)
 
 	fp = fopen(f_name, "r");
 	if (!fp) {
-		_PR_LINE("Fail to open file %s\n", f_name);
+		PERROR("Fail to open file %d\n", errno);
 		return -EINVAL;
 	}
 
 	ret = fseek(fp, offset, SEEK_SET);
 	if (ret < 0) {
-		_PR_LINE("Fail to locate spool buffer\n");
+		PERROR("Fail to locate spool buffer\n");
 		goto fail;
 	}
 
 	/* read the structure */
 	ret = fread(&log, sizeof(logger_buf), 1, fp);
 	if (ret <= 0) {
-		_PR_LINE("Fail reading logger structure\n");
+		PERROR("Fail reading logger structure\n");
 		goto fail;
 	}
 
@@ -150,7 +150,7 @@ static int parse_logger(char *f_name)
 	    !log.spool_len ||
 	    (log.spool_nentries > MAX_NENTRIES) ||
 	    (log.spool_len > MAX_ENTRY_LEN)) {
-		_PR_LINE("Fail: invalid logger header!\n");
+		PERROR("Fail: invalid logger header!\n");
 		ret = -EINVAL;
 		goto fail;
 	}
@@ -164,16 +164,16 @@ static int parse_logger(char *f_name)
 			    offset + log.spool_off + idx * log.spool_len,
 			    SEEK_SET);
 		if (ret < 0) {
-			_PR_LINE("Locating entry[%d] fails - %s",
-				 idx, strerror(errno));
+			PERROR("Locating entry[%d] fails - %d",
+			       idx, ret);
 			goto fail;
 		}
 
 		/* read line and dump */
 		ret = fread(oneline, sizeof(oneline), 1, fp);
 		if (ret < 0) {
-			_PR_LINE("Error reading entry[%d] - %s",
-				 idx, strerror(errno));
+			PERROR("Error reading entry[%d] - %d",
+			       idx, ret);
 			goto fail;
 		}
 
@@ -197,6 +197,7 @@ static void usage(char *name)
 
 int main(int argc, char **argv)
 {
+	char e_msg[MAX_ERR_MSG] = "";
 	char f_name[FNAME_LEN] = { 0 };
 	char c;
 	int option_index;
@@ -214,7 +215,7 @@ int main(int argc, char **argv)
 		switch (c) {
 		case 'f':
 			if (strlen(optarg) >= sizeof(f_name)) {
-				_PR_LINE("optarg too long for file name\n");
+				PERROR("optarg too long for file name\n");
 				return -EINVAL;
 			}
 			strncpy(f_name, optarg, sizeof(f_name));
@@ -223,7 +224,7 @@ int main(int argc, char **argv)
 			break;
 		case 'c':
 			if (strlen(optarg) >= sizeof(f_name)) {
-				_PR_LINE("optarg too long for file name\n");
+				PERROR("optarg too long for file name\n");
 				return -EINVAL;
 			}
 			strncpy(f_name, optarg, sizeof(f_name));
@@ -231,14 +232,14 @@ int main(int argc, char **argv)
 			infile_c = 1;
 			break;
 		default:
-			_PR_LINE("%c Not supported\n", c);
+			PERROR("%c Not supported\n", c);
 			usage(argv[0]);
 			return -EINVAL;
 		}
 	}
 
 	if (infile_f && infile_c) {
-		_PR_LINE("Error: only one input file can be specified!\n");
+		PERROR("Error: only one input file can be specified!\n");
 		usage(argv[0]);
 		return -EINVAL;
 	}

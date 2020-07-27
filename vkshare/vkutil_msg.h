@@ -3,8 +3,8 @@
  * Copyright 2020 Broadcom
  */
 
-#ifndef _VCON_CHAN_INTF_H_
-#define _VCON_CHAN_INTF_H_
+#ifndef _VKUTIL_MSG_H_
+#define _VKUTIL_MSG_H_
 
 /**
  * interface structure, and this has to match the VK side definition.
@@ -40,5 +40,17 @@ typedef struct _console_buf {
 
 /* common file name max */
 #define FNAME_LEN		256
+#define MAX_ERR_MSG		512
+
+#define PERROR(...) do { \
+			snprintf(e_msg, \
+				 MAX_ERR_MSG, \
+				 __VA_ARGS__);\
+			fprintf(stderr, \
+				" @L:%d %s\n", \
+				__LINE__, \
+				e_msg);\
+			fflush(stderr);\
+			} while (0)
 
 #endif

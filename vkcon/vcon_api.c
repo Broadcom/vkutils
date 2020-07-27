@@ -16,9 +16,9 @@
 #include <sys/mman.h>
 
 #include "bcm_vk.h"
-#include "vcon_api.h"
-#include "vcon_chan_intf.h"
 #include "pcimem.h"
+#include "vcon_api.h"
+#include "vkutil_msg.h"
 
 /**
  * @file
@@ -44,7 +44,6 @@ enum chan_state {
 #define VCON_IN_CMD_POLL_US	(100 * 1000) /* 100ms */
 #define VCON_IN_CMD_TIMEOUT_US	(5 * 1000000) /* 5s timeout */
 #define VCON_IN_CMD_POLL_MAX	(VCON_IN_CMD_TIMEOUT_US / VCON_IN_CMD_POLL_US)
-#define MAX_ERR_MSG		255
 
 /* command doorbell notification definitions */
 #define VCON_BOOT_STATUS_OFFSET	0x404
@@ -65,17 +64,6 @@ enum chan_state {
 #define VCON_DEF_MMAP_SIZE	(256 * 1024)
 #define MAX_MMAP_SIZE		(2 * 1024 * 1024)
 
-/* local macros */
-#define PERROR(...) do { \
-			snprintf(e_msg, \
-				 MAX_ERR_MSG, \
-				 __VA_ARGS__);\
-			fprintf(stderr, \
-				" @L:%d %s\n", \
-				__LINE__, \
-				e_msg);\
-			fflush(stderr);\
-			} while (0)
 
 typedef struct _dev_ctx {
 	int fd;

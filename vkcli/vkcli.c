@@ -54,16 +54,15 @@
 
 #include "bcm_vk.h"
 #include "pcimem.h"
+#include "vkutil_msg.h"
 
 #define DEV_SYSFS_NAME		"/sys/class/misc/bcm-vk"
 #define DEV_DRV_NAME		"/dev/bcm_vk"
 #define DEV_LEGACY_DRV_NAME	"/dev/bcm-vk"
 #define DEV_SYS_RESOURCE	"pci/resource"
 
-#define FNAME_LEN		64
 #define MAX_CARDS_PER_HOST	12
 #define MAX_DID_DIGIT		2
-#define MAX_ERR_MSG		255
 #define MAX_FILESIZE		0x4000000	/* 64MB */
 #define MAX_SCMD_LEN		20
 #define MAX_SYS_PATH		200
@@ -75,16 +74,6 @@
 #define BOOT_STATUS_BAR_NUM 0
 
 /* local macros */
-#define PERROR(...) do { \
-			snprintf(e_msg, \
-				 MAX_ERR_MSG, \
-				 __VA_ARGS__);\
-			fprintf(stderr, \
-				" @L:%d %s\n", \
-				__LINE__, \
-				e_msg);\
-			fflush(stderr);\
-			} while (0)
 
 #define S_LERR(a, b) do { \
 			if ((a) >= 0) \
