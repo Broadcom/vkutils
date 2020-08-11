@@ -19,6 +19,7 @@
 
 #include "bcm_vk.h"
 #include "vcon_api.h"
+#include "version.h"
 #include "vkutil_msg.h"
 
 /**
@@ -35,11 +36,6 @@
 #define VCON_CMD_DB_OFFSET		0x49c
 
 /* local macros */
-#define _PR_LINE(...)                       \
-{                                           \
-	printf(__VA_ARGS__);                \
-}
-
 #define _ELAPSED_MS(_end, _st) \
 	((_end.tv_sec - _st.tv_sec) * 1000L + \
 	 (_end.tv_nsec - _st.tv_nsec) / 1000000L)
@@ -61,16 +57,16 @@ int main(int argc, char **argv)
 		{"dev", required_argument, 0, 'd'},
 		{"in", no_argument, 0, 'i'},
 		{"out", no_argument, 0, 'o'},
+		{"version", no_argument, 0, 'v'},
 		{0, 0, 0, 0}
 	};
 
-	while ((c = getopt_long(argc, argv, "c:d:s:",
+	while ((c = getopt_long(argc, argv, "c:d:s:v:",
 				long_options, &option_index)) != -1) {
 		switch (c) {
 		case 'c':
 			cmd = optarg;
 			break;
-
 		case 'd':
 			dev_name = optarg;
 			break;
@@ -80,6 +76,17 @@ int main(int argc, char **argv)
 				period = VKCMD_MIN_DURATION_SEC;
 			period *= 1000;
 			break;
+		case 'v':
+			_PR_LINE("%s version %s.%s.%s\n",
+				 argv[0],
+				 PKG_VERSION_MAJOR,
+				 PKG_VERSION_MINOR,
+				 PKG_VERSION_PATCH);
+			/*
+			 * version query cannot be combined
+			 * with other commands. Exit after reporting
+			 */
+			return 0;
 		default:
 			_PR_LINE("%c Not supported", c);
 			return -EINVAL;

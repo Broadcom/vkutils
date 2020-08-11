@@ -17,9 +17,9 @@
 #include <sys/mman.h>
 
 #include "vcon_api.h"
+#include "version.h"
 #include "vkutil_msg.h"
 
-#define _PR_LINE	printf
 #define banner		"==============================================\n"
 
 /* checks for limits */
@@ -207,10 +207,11 @@ int main(int argc, char **argv)
 	static struct option long_options[] = {
 		{"file", required_argument, 0, 'f'},
 		{"console", required_argument, 0, 'c'},
+		{"version", no_argument, 0, 'v'},
 		{0, 0, 0, 0}
 	};
 
-	while ((c = getopt_long(argc, argv, "f:c:",
+	while ((c = getopt_long(argc, argv, "f:c:v:",
 				long_options, &option_index)) != -1) {
 		switch (c) {
 		case 'f':
@@ -231,6 +232,17 @@ int main(int argc, char **argv)
 			f_name[sizeof(f_name) - 1] = '\0';
 			infile_c = 1;
 			break;
+		case 'v':
+			_PR_LINE("%s version %s.%s.%s\n",
+				 argv[0],
+				 PKG_VERSION_MAJOR,
+				 PKG_VERSION_MINOR,
+				 PKG_VERSION_PATCH);
+			/*
+			 * version query cannot be combined
+			 * with other commands. Exit after reporting
+			 */
+			return 0;
 		default:
 			PERROR("%c Not supported\n", c);
 			usage(argv[0]);

@@ -6,6 +6,12 @@
 #ifndef _VKUTIL_MSG_H_
 #define _VKUTIL_MSG_H_
 
+#ifdef MULTITHREAD
+#include <pthread.h>
+
+pthread_mutex_t log_mutex = PTHREAD_MUTEX_INITIALIZER;
+#endif
+
 /**
  * interface structure, and this has to match the VK side definition.
  * we only care about the spooled part.
@@ -53,4 +59,22 @@ typedef struct _console_buf {
 			fflush(stderr);\
 			} while (0)
 
+#define FPR_FN(...)             do { \
+					fprintf(stdout, __VA_ARGS__); \
+					fflush(stdout); \
+				} while (0)
+
+#ifndef MULTITHREAD
+#define _PR_LINE(...)                       \
+{                                           \
+	printf(__VA_ARGS__);                \
+}
+#else
+#define _PR_LINE(...)                      \
+{                                          \
+	pthread_mutex_lock(&log_mutex);    \
+	printf(__VA_ARGS__);                \
+	pthread_mutex_unlock(&log_mutex);  \
+}
+#endif
 #endif

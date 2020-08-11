@@ -18,6 +18,7 @@
 
 #include "bcm_vk.h"
 #include "vcon_api.h"
+#include "version.h"
 #include "vkutil_msg.h"
 
 /**
@@ -36,18 +37,7 @@
 #define VKCON_THREAD_CREATION_DELAY	500000 /* half a sec */
 #define VKCON_OUT_BUF_SIZE		(2 * 1024)
 
-/* local macros */
-#define _PR_F  printf
-
-#define _PR_LINE(...)                      \
-{                                          \
-	pthread_mutex_lock(&log_mutex);    \
-	_PR_F(__VA_ARGS__);                \
-	pthread_mutex_unlock(&log_mutex);  \
-}
-
 static const char *true_false[2] = {"False", "True"};
-static pthread_mutex_t log_mutex = PTHREAD_MUTEX_INITIALIZER;
 static bool out_thread_running;
 
 /**
@@ -77,7 +67,7 @@ static void *output_thread(void *arg)
 
 			pthread_mutex_lock(&log_mutex);
 			for (i = 0; i < ret; i++)
-				_PR_F("%c", buf[i]);
+				_PR_LINE("%c", buf[i]);
 			pthread_mutex_unlock(&log_mutex);
 		}
 	}
@@ -146,12 +136,13 @@ int main(int argc, char **argv)
 		{"dev", required_argument, 0, 'd'},
 		{"in", no_argument, 0, 'i'},
 		{"out", no_argument, 0, 'o'},
+		{"version", no_argument, 0, 'v'},
 		{0, 0, 0, 0}
 	};
 
 	memset(dev_name, 0, sizeof(dev_name));
 
-	while ((c = getopt_long(argc, argv, "d:i:o:s:",
+	while ((c = getopt_long(argc, argv, "d:i:o:s:v:",
 				long_options, &option_index)) != -1) {
 		switch (c) {
 		case 'd':
@@ -170,6 +161,17 @@ int main(int argc, char **argv)
 			if (strcmp(VCON_ENABLE, optarg) == 0)
 				output_enable = true;
 			break;
+		case 'v':
+			_PR_LINE("%s version %s.%s.%s\n",
+				 argv[0],
+				 PKG_VERSION_MAJOR,
+				 PKG_VERSION_MINOR,
+				 PKG_VERSION_PATCH);
+			/*
+			 * version query cannot be combined
+			 * with other commands. Exit after reporting
+			 */
+			return 0;
 		default:
 			_PR_LINE("%c Not supported", c);
 			return -EINVAL;
