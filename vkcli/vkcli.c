@@ -54,6 +54,7 @@
 
 #include "bcm_vk.h"
 #include "pcimem.h"
+#include "version.h"
 #include "vkutil_msg.h"
 
 #define DEV_SYSFS_NAME		"/sys/class/misc/bcm-vk"
@@ -79,11 +80,6 @@
 			if ((a) >= 0) \
 				(a) = (b); \
 			} while (0)
-
-#define FPR_FN(...)             do { \
-					fprintf(stdout, __VA_ARGS__); \
-					fflush(stdout); \
-				} while (0)
 
 #ifndef ARRAY_SIZE
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
@@ -148,6 +144,7 @@ enum cmd_node {
 	ND_BCM,
 	ND_SYS,
 	ND_HELP,
+	ND_VER,
 	ND_LAST,
 	ND_INVALID = 0xFFFFFFFF
 };
@@ -184,6 +181,7 @@ static int cmd_fio(int, int, int*, int, char*);
 /* node lookup table */
 static struct node_unit node_lookup_tbl[] = {
 	{ ND_HELP, "", "" },
+	{ ND_VER, "", "" },
 	{ ND_BCM, DEV_DRV_NAME, DEV_LEGACY_DRV_NAME },
 	{ ND_SYS, DEV_SYSFS_NAME, "" }
 };
@@ -203,8 +201,9 @@ static struct cmd_attributes attr_lookup_tbl[] = {
 /* main lookup table */
 /* each command has an entry in this table - used for consistency checks */
 static struct cmd_unit cmd_lookup_tbl[] = {
-	/* iNODE,   CMD,     PF,         ATTRIB */
+	/* NODE,   CMD,     PF,         ATTRIB */
 	{ ND_HELP, "--help", NULL,        &attr_lookup_tbl[CMD_FIRST] },
+	{ ND_VER,  "--version", NULL,     &attr_lookup_tbl[CMD_FIRST] },
 	{ ND_BCM,   "reset", &cmd_res,    &attr_lookup_tbl[CMD_RESET] },
 	{ ND_BCM,   "li",    &cmd_li,     &attr_lookup_tbl[CMD_LOAD_IMAGE] },
 	{ ND_SYS,   "rb",    &cmd_io,     &attr_lookup_tbl[CMD_READ_BIN] },
@@ -426,6 +425,17 @@ static int is_valid_cmd(int cmd_cnt,
 			cmd_line[i],
 			sizeof(cmd_param_tbl[0]));
 		cmd_param_tbl[i][sizeof(cmd_param_tbl[0]) - 1] = '\0';
+	}
+	if (strcmp(str, "--version") == 0) {
+		*node = ND_VER;
+		return STATUS_OK;
+	}
+	if (scmd_cnt >= MAX_SUB_CMDS) {
+		PERROR("%s: Invalid parameter nr: %d\n",
+		       cmd_line[ARG_CMD],
+		       scmd_cnt);
+		print_usage();
+		return -EINVAL;
 	}
 	/* legacy dev node naming */
 	if (strlen(str) > MAX_DID_DIGIT) {
@@ -1185,6 +1195,18 @@ static int  cmd_handler(int cmd_cnt,
 
 	if (fnode == ND_INVALID) {
 		print_usage();
+		return STATUS_OK;
+	}
+	/*
+	 * version query cannot be combined
+	 * with other commands. Exit after reporting
+	 */
+	if (fnode == ND_VER) {
+		FPR_FN("%s version %s.%s.%s\n",
+		       cmd_param_tbl[ARG_SELF],
+		       PKG_VERSION_MAJOR,
+		       PKG_VERSION_MINOR,
+		       PKG_VERSION_PATCH);
 		return STATUS_OK;
 	}
 	memset(data, 0, sizeof(data));
