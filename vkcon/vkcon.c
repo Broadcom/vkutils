@@ -67,7 +67,7 @@ static void *output_thread(void *arg)
 
 			pthread_mutex_lock(&log_mutex);
 			for (i = 0; i < ret; i++)
-				_PR_LINE("%c", buf[i]);
+				_PR_F("%c", buf[i]);
 			pthread_mutex_unlock(&log_mutex);
 		}
 	}

@@ -64,6 +64,8 @@ typedef struct _console_buf {
 					fflush(stdout); \
 				} while (0)
 
+#define _PR_F printf
+
 #ifndef MULTITHREAD
 #define _PR_LINE(...)                       \
 {                                           \
