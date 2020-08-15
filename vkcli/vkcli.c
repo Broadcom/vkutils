@@ -110,6 +110,7 @@ enum scmd_index {
 /* supported command IDs */
 enum cmd_list {
 	CMD_FIRST,		/* 0 - reserved ID */
+	CMD_INFO,
 	CMD_RESET,
 	CMD_LOAD_IMAGE,
 	CMD_READ_BIN,
@@ -125,7 +126,8 @@ enum cmd_class {
 	IO_AXS_CMDS	= 0x01,
 	FIO_AXS_CMDS	= 0x02,
 	CTRL_CMDS	= 0x04,
-	MAX_CMDS	= (CTRL_CMDS - 1)
+	INFO_CMDS	= 0x08,
+	MAX_CMDS	= (INFO_CMDS << 1)
 };
 
 enum cmd_mode {
@@ -141,10 +143,10 @@ enum li_method {
 
 enum cmd_node {
 	ND_FIRST,
+	ND_VER,
 	ND_BCM,
 	ND_SYS,
 	ND_HELP,
-	ND_VER,
 	ND_LAST,
 	ND_INVALID = 0xFFFFFFFF
 };
@@ -173,23 +175,25 @@ struct node_unit {
 	char node_bckup_path[MAX_SYS_PATH];
 };
 
-static int cmd_res(int, int, int*, int, char*);
-static int cmd_li(int, int, int*, int, char*);
 static int cmd_io(int, int, int*, int, char*);
+static int cmd_li(int, int, int*, int, char*);
 static int cmd_fio(int, int, int*, int, char*);
+static int cmd_res(int, int, int*, int, char*);
+static int cmd_ver(int, int, int*, int, char*);
 
 /* node lookup table */
 static struct node_unit node_lookup_tbl[] = {
 	{ ND_HELP, "", "" },
 	{ ND_VER, "", "" },
 	{ ND_BCM, DEV_DRV_NAME, DEV_LEGACY_DRV_NAME },
-	{ ND_SYS, DEV_SYSFS_NAME, "" }
+	{ ND_SYS, DEV_SYSFS_NAME, "" },
 };
 
 /* command attributes lookup table */
 static struct cmd_attributes attr_lookup_tbl[] = {
 /*	SUB_CMD(s)                CLASS,    MIN_P, MAX_P */
 	{ { "" },                   MAX_CMDS,     0, 0 },
+	{ { "" },                   INFO_CMDS,    0, 0 },
 	{ { "force" },              CTRL_CMDS,    0, 1 },
 	{ { "boot1", "boot2", "-"}, CTRL_CMDS,    1, 3 },
 	{ { "" },                   IO_AXS_CMDS,  2, 2 },
@@ -203,13 +207,13 @@ static struct cmd_attributes attr_lookup_tbl[] = {
 static struct cmd_unit cmd_lookup_tbl[] = {
 	/* NODE,   CMD,     PF,         ATTRIB */
 	{ ND_HELP, "--help", NULL,        &attr_lookup_tbl[CMD_FIRST] },
-	{ ND_VER,  "--version", NULL,     &attr_lookup_tbl[CMD_FIRST] },
+	{ ND_VER,  "--version", &cmd_ver, &attr_lookup_tbl[CMD_INFO] },
 	{ ND_BCM,   "reset", &cmd_res,    &attr_lookup_tbl[CMD_RESET] },
 	{ ND_BCM,   "li",    &cmd_li,     &attr_lookup_tbl[CMD_LOAD_IMAGE] },
 	{ ND_SYS,   "rb",    &cmd_io,     &attr_lookup_tbl[CMD_READ_BIN] },
 	{ ND_SYS,   "wb",    &cmd_io,     &attr_lookup_tbl[CMD_WRITE_BIN] },
 	{ ND_SYS,   "rf",    &cmd_fio,    &attr_lookup_tbl[CMD_READ_FILE] },
-	{ ND_SYS,   "wf",    &cmd_fio,    &attr_lookup_tbl[CMD_WRITE_FILE] }
+	{ ND_SYS,   "wf",    &cmd_fio,    &attr_lookup_tbl[CMD_WRITE_FILE] },
 };
 
 /* variable command line parameter table */
@@ -220,19 +224,21 @@ static int cmd_lookup(enum cmd_class cclass, enum cmd_list *ci);
 
 static void print_usage(void)
 {
-	printf("Usage: vkcli <node_num> <args...>\n");
-	printf("node_num: 0..11\n");
-	printf("Available arguments:\n");
-	printf("\tli: load image\n");
-	printf("\t\t<-/boot1/boot2> [fname1] [fname2]\n");
-	printf("\t\t\t'-' load both stages (both boot1 and boot2)\n");
-	printf("\t\t\t'boot1' -- only first stage (boot1)\n");
-	printf("\t\t\t'boot2' -- only second stage (boot2)\n");
-	printf("\trb: read bar <barno> <offset>\n");
-	printf("\trf: read to file <barno> <offset> <len> file\n");
-	printf("\twb: write bar <barno> <offset> <value>\n");
-	printf("\twf: write from file <barno> <offset> file\n");
-	printf("\treset: issue reset command\n");
+	FPR_FN("Usage: vkcli <node_num> <args...>\n");
+	FPR_FN("node_num: 0..11\n");
+	FPR_FN("Available arguments:\n");
+	FPR_FN("\tli: load image\n");
+	FPR_FN("\t\t<-/boot1/boot2> [fname1] [fname2]\n");
+	FPR_FN("\t\t\t'-' load both stages (both boot1 and boot2)\n");
+	FPR_FN("\t\t\t'boot1' -- only first stage (boot1)\n");
+	FPR_FN("\t\t\t'boot2' -- only second stage (boot2)\n");
+	FPR_FN("\trb: read bar <barno> <offset>\n");
+	FPR_FN("\trf: read to file <barno> <offset> <len> file\n");
+	FPR_FN("\twb: write bar <barno> <offset> <value>\n");
+	FPR_FN("\twf: write from file <barno> <offset> file\n");
+	FPR_FN("\treset [force]: issue reset command / unconditional\n");
+	FPR_FN("\t--version query version information\n");
+	FPR_FN("\t--help prints this help\n");
 }
 
 /**
@@ -410,27 +416,24 @@ static int is_valid_cmd(int cmd_cnt,
 	str = cmd_line[ARG_NODE];
 	if (str == NULL)
 		return -EINVAL;
-	if (strcmp(str, "--help") == 0)
-		return STATUS_OK;
-	if (scmd_cnt >= MAX_SUB_CMDS) {
-		PERROR("%s: Invalid parameter nr: %d\n",
-		       cmd_line[ARG_CMD],
-		       scmd_cnt);
-		print_usage();
-		return -EINVAL;
-	}
-	/* mirror command line in our cmd_param_tbl */
+	/*
+	 * mirror command line in our cmd_param_tbl
+	 */
 	for (i = 0; i <  cmd_cnt; i++) {
 		strncpy(cmd_param_tbl[i],
 			cmd_line[i],
 			sizeof(cmd_param_tbl[0]));
 		cmd_param_tbl[i][sizeof(cmd_param_tbl[0]) - 1] = '\0';
 	}
-	if (strcmp(str, "--version") == 0) {
-		*node = ND_VER;
+	if (strcmp(str, "--help") == 0) {
+		*node = ND_INVALID;
 		return STATUS_OK;
 	}
-	if (scmd_cnt >= MAX_SUB_CMDS) {
+	if (strcmp(str, "--version") == 0) {
+		*node = ND_LAST;
+		return STATUS_OK;
+	}
+	if (scmd_cnt > MAX_SUB_CMDS) {
 		PERROR("%s: Invalid parameter nr: %d\n",
 		       cmd_line[ARG_CMD],
 		       scmd_cnt);
@@ -483,6 +486,7 @@ static int cmd_get_class(int scmds_cnt, enum cmd_class *cclass)
 {
 	char e_msg[MAX_ERR_MSG] = "";
 	enum cmd_list i = 0;
+	int cmd_idx = 0;
 	int lret;
 	int ret = STATUS_OK;
 	struct cmd_unit *ucmd;
@@ -491,12 +495,17 @@ static int cmd_get_class(int scmds_cnt, enum cmd_class *cclass)
 		PERROR("NULL param\n");
 		ret = -EINVAL;
 	} else {
+		cmd_idx = ARG_CMD;
+		if (scmds_cnt == 0)
+			cmd_idx = ARG_NODE;
 		for (i = CMD_FIRST; i < CMD_LAST; i++) {
 			ucmd = &cmd_lookup_tbl[i];
-			ret = strcmp(cmd_param_tbl[ARG_CMD],
+			ret = strcmp(cmd_param_tbl[cmd_idx],
 				     ucmd->cmd_name);
 			if (ret == 0) {
 				*cclass = ucmd->cmd_attrib->class;
+				if (*cclass != INFO_CMDS)
+					scmds_cnt--;
 				if (scmds_cnt < ucmd->cmd_attrib->min_params ||
 				    scmds_cnt > ucmd->cmd_attrib->max_params) {
 					PERROR("%s: Bad parameter nr: %d\n",
@@ -525,6 +534,7 @@ static int cmd_lookup(enum cmd_class cclass, enum cmd_list *ci)
 {
 	char e_msg[MAX_ERR_MSG] = "";
 	enum cmd_list i;
+	int cmd_idx;
 	int ret = STATUS_OK;
 	char *str;
 	struct cmd_unit *ucmd;
@@ -533,7 +543,10 @@ static int cmd_lookup(enum cmd_class cclass, enum cmd_list *ci)
 		PERROR("NULL param\n");
 		ret = -EINVAL;
 	} else {
-		str = cmd_param_tbl[ARG_CMD];
+		cmd_idx = ARG_CMD;
+		if (cclass == INFO_CMDS)
+			cmd_idx = ARG_NODE;
+		str = cmd_param_tbl[cmd_idx];
 		for (i = CMD_FIRST + 1; i < CMD_LAST; i++) {
 			ucmd = &cmd_lookup_tbl[i];
 			if (ucmd->cmd_attrib->class == cclass &&
@@ -585,6 +598,9 @@ static int scmd_get_param(int cmd_cnt,
 	scmds = cmd_cnt - ARG_PARAM1;
 	cclass = ca->class;
 	switch (cclass) {
+	case INFO_CMDS:
+		*scmd_cnt = 0;
+		return STATUS_OK;
 	case CTRL_CMDS:
 		/* arguments validation */
 		val = -1;
@@ -773,7 +789,7 @@ static int cmd_res(int fd,
 			return -EINVAL;
 		}
 		scmd[SC_OFFSET] = BOOT_STATUS_REG;
-		val = cmd_io(fd, CMD_READ_BIN, scmd, 2 /* 2 param */, pcie_res);
+		val = cmd_io(0, CMD_READ_BIN, scmd, 2 /* 2 param */, pcie_res);
 		if (val || (scmd[SC_VAL] == BOOT_STATUS_UCODE_NOT_RUN)) {
 			PERROR("Reset skipped - UCODE not running(0x%x)\n",
 			       scmd[SC_VAL]);
@@ -805,6 +821,32 @@ static int cmd_res(int fd,
 	 */
 	if (reset.arg2)
 		FPR_FN("VK_IOCTL_RESET ramdump/standalone mode, PCIe rescan required!\n");
+
+	return STATUS_OK;
+}
+
+/**
+ * @brief cmd_ver command handler for version reporting
+ *
+ * @param[in] fd - device file descriptor
+ * @param[in] cmd_idx command index
+ * @param[in] scmd_idx pointer to array of sub_command values
+ * @param[in] scmd_cnt number of values in the sub-command array
+ * @param[in] path dev_node remapped path (may differ from user path)
+ *
+ * @return STATUS_OK on success, error code otherwise
+ */
+static int cmd_ver(int fd,
+		   int cmd_idx,
+		   int *scmd_idx,
+		   int scmd_cnt,
+		   char *path)
+{
+	FPR_FN("%s version %s.%s.%s\n",
+	       cmd_param_tbl[ARG_SELF],
+	       PKG_VERSION_MAJOR,
+	       PKG_VERSION_MINOR,
+	       PKG_VERSION_PATCH);
 
 	return STATUS_OK;
 }
@@ -1192,27 +1234,14 @@ static int  cmd_handler(int cmd_cnt,
 	enum cmd_node n_id;
 	int ret = STATUS_OK;
 	int scmds_found = 0;
-
 	if (fnode == ND_INVALID) {
 		print_usage();
-		return STATUS_OK;
-	}
-	/*
-	 * version query cannot be combined
-	 * with other commands. Exit after reporting
-	 */
-	if (fnode == ND_VER) {
-		FPR_FN("%s version %s.%s.%s\n",
-		       cmd_param_tbl[ARG_SELF],
-		       PKG_VERSION_MAJOR,
-		       PKG_VERSION_MINOR,
-		       PKG_VERSION_PATCH);
 		return STATUS_OK;
 	}
 	memset(data, 0, sizeof(data));
 	ret = cmd_get_class(scmd_cnt, &cmdc);
 	if (ret < 0) {
-		PERROR("%s: bad command for class %d; err=0x%x",
+		PERROR("%s: bad command for class %x; err=0x%x",
 		       cmd_param_tbl[ARG_CMD],
 		       cmdc,
 		       ret);
@@ -1278,7 +1307,7 @@ int main(int argc,
 	int cmd_cnt, scmd_cnt;
 
 	cmd_cnt = argc;
-	scmd_cnt = cmd_cnt - ARG_PARAM1;
+	scmd_cnt = cmd_cnt - ARG_CMD;
 	ret = is_valid_cmd(cmd_cnt, scmd_cnt, argv, &node);
 	if (ret != STATUS_OK) {
 		PERROR("%s / %s: invalid command / node; err=0x%x",
