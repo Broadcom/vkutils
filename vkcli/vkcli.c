@@ -181,9 +181,9 @@ static int cmd_fio(int, int, int*, int, char*);
 /* node lookup table */
 static struct node_unit node_lookup_tbl[] = {
 	{ ND_HELP, "", "" },
+	{ ND_VER, "", "" },
 	{ ND_BCM, DEV_DRV_NAME, DEV_LEGACY_DRV_NAME },
-	{ ND_SYS, DEV_SYSFS_NAME, "" },
-	{ ND_VER, "", "" }
+	{ ND_SYS, DEV_SYSFS_NAME, "" }
 };
 
 /* command attributes lookup table */
@@ -203,13 +203,13 @@ static struct cmd_attributes attr_lookup_tbl[] = {
 static struct cmd_unit cmd_lookup_tbl[] = {
 	/* NODE,   CMD,     PF,         ATTRIB */
 	{ ND_HELP, "--help", NULL,        &attr_lookup_tbl[CMD_FIRST] },
+	{ ND_VER,  "--version", NULL,     &attr_lookup_tbl[CMD_FIRST] },
 	{ ND_BCM,   "reset", &cmd_res,    &attr_lookup_tbl[CMD_RESET] },
 	{ ND_BCM,   "li",    &cmd_li,     &attr_lookup_tbl[CMD_LOAD_IMAGE] },
 	{ ND_SYS,   "rb",    &cmd_io,     &attr_lookup_tbl[CMD_READ_BIN] },
 	{ ND_SYS,   "wb",    &cmd_io,     &attr_lookup_tbl[CMD_WRITE_BIN] },
 	{ ND_SYS,   "rf",    &cmd_fio,    &attr_lookup_tbl[CMD_READ_FILE] },
-	{ ND_SYS,   "wf",    &cmd_fio,    &attr_lookup_tbl[CMD_WRITE_FILE] },
-	{ ND_VER,  "--version", NULL,     &attr_lookup_tbl[CMD_FIRST] }
+	{ ND_SYS,   "wf",    &cmd_fio,    &attr_lookup_tbl[CMD_WRITE_FILE] }
 };
 
 /* variable command line parameter table */
