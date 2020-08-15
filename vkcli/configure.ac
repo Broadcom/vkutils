@@ -20,6 +20,7 @@ AM_INIT_AUTOMAKE([gnu subdir-objects -Wall -Werror foreign])
 # Checks for programs.
 AM_PROG_AR
 AC_PROG_CC
+AM_PROG_CC_C_O
 AC_PROG_INSTALL
 AC_PROG_MAKE_SET
 AM_CFLAGS="-Wall -Werror -O2 -Wmissing-prototypes -Wstrict-prototypes -std=gnu89 -Wdeclaration-after-statement"
