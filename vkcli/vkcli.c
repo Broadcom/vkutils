@@ -199,7 +199,7 @@ static struct cmd_attributes attr_lookup_tbl[] = {
 	{ { "" },                   IO_AXS_CMDS,  2, 2 },
 	{ { "" },                   IO_AXS_CMDS,  3, 3 },
 	{ { "" },                   FIO_AXS_CMDS, 4, 4 },
-	{ { "" },                   FIO_AXS_CMDS, 5, 5 }
+	{ { "" },                   FIO_AXS_CMDS, 3, 3 }
 };
 
 /* main lookup table */
@@ -233,9 +233,9 @@ static void print_usage(void)
 	FPR_FN("\t\t\t'boot1' -- only first stage (boot1)\n");
 	FPR_FN("\t\t\t'boot2' -- only second stage (boot2)\n");
 	FPR_FN("\trb: read bar <barno> <offset>\n");
-	FPR_FN("\trf: read to file <barno> <offset> <len> file\n");
+	FPR_FN("\trf: read to file <barno> <offset> <len> <fname>\n");
 	FPR_FN("\twb: write bar <barno> <offset> <value>\n");
-	FPR_FN("\twf: write from file <barno> <offset> file\n");
+	FPR_FN("\twf: write from file <barno> <offset> <fname>\n");
 	FPR_FN("\treset [force]: issue reset command / unconditional\n");
 	FPR_FN("\t--version query version information\n");
 	FPR_FN("\t--help prints this help\n");
