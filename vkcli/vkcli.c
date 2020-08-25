@@ -67,7 +67,6 @@
 #define MAX_FILESIZE		0x4000000	/* 64MB */
 #define MAX_SCMD_LEN		20
 #define MAX_SYS_PATH		200
-#define MAX_DEV_NODE_LEN	MAX_SYS_PATH
 #define TEST_NODE		0xFFFFFFFF
 
 /* defines for register representing card */
@@ -152,11 +151,6 @@ enum cmd_node {
 	ND_INVALID = 0xFFFFFFFF
 };
 
-enum node_path {
-	ND_NORMAL_PATH,
-	ND_BACKUP_PATH
-};
-
 /* command description structure: */
 /* list of sub-commands, class it belongs to, min/max param nr. */
 struct cmd_attributes {
@@ -178,7 +172,7 @@ struct cmd_unit {
 struct node_unit {
 	enum cmd_node node_id;
 	char node_norm_path[MAX_SYS_PATH];
-	char node_backup_path[MAX_SYS_PATH];
+	char node_bckup_path[MAX_SYS_PATH];
 };
 
 static int cmd_io(int, int, int*, int, char*);
@@ -317,67 +311,6 @@ static int find_size(char *f_name, unsigned int *size)
 }
 
 /**
- * @brief sys_path_translate construct sys path from node
- *
- * @param[in] node device instance
- * @param[in] node_path - allowed values: ND_NORMAL_PATH / ND_BACKUP_PATH
- *                        select node_norm_path / node_backup_path
- * @param[in] resource endpoint for enumerating devices i.e bar for pcie
- * @param[in] cmd_id - command to apply on device / endpoint
- * @param[in/out] dev_node - user requested sys path / open real path
- * @param[in/out] dev_node_size - size of input path / output real path
- *
- * @return STATUS_OK on success, file errno code otherwise
- */
-static int sys_path_translate(const int node,
-			      const enum node_path node_path,
-			      const int resource,
-			      const enum cmd_list cmd_id,
-			      char *dev_node,
-			      int *dev_node_size)
-{
-	enum cmd_node node_idx = 0;
-	char *n_path;
-	int ret = STATUS_OK;
-
-	if ((!dev_node) || (!dev_node_size))
-		return -EINVAL;
-
-	if (cmd_id == ND_VER)
-		return ret;
-
-	node_idx = cmd_lookup_tbl[cmd_id].cmd_node;
-	if (node_path == ND_NORMAL_PATH)
-		n_path = node_lookup_tbl[node_idx].node_norm_path;
-	else
-		n_path = node_lookup_tbl[node_idx].node_backup_path;
-	if (node_idx == ND_SYS) {
-		ret = snprintf(dev_node,
-			       *dev_node_size,
-			       "%s.%d/%s%d",
-			       n_path,
-			       node,
-			       DEV_SYS_RESOURCE,
-			       resource);
-	} else {
-		if (strlen(n_path) <= 0)
-			return -EINVAL;
-
-		ret = snprintf(dev_node,
-			       *dev_node_size,
-			       "%s.%d",
-			       n_path,
-			       node);
-	}
-	if (ret < 0)
-		return ret;
-
-	if (ret <= *dev_node_size)
-		*dev_node_size = ret + 1;
-	return STATUS_OK;
-}
-
-/**
  * @brief cmd_node_lookup construct sys path and use it according to mode
  *
  * @param[in] node device instance
@@ -385,7 +318,6 @@ static int sys_path_translate(const int node,
  * @param[in] mode - perform open action or just verify it exists
  * @param[in] cmd_id - command to apply on device / endpoint
  * @param[in/out] dev_node - user requested sys path / open real path
- * @param[in/out] dev_node_size - sys path size / open real path size
  * @param[out] f_id - file descriptor, when open is performed
  *
  * @return STATUS_OK on success, file errno code otherwise
@@ -395,46 +327,46 @@ static int cmd_node_lookup(int node,
 			   enum cmd_mode mode,
 			   enum cmd_list cmd_id,
 			   char *dev_node,
-			   int *dev_node_size,
 			   int *f_id)
 {
 	int class;
 	char device_node[MAX_SYS_PATH] = "";
-	int device_node_len;
 	char e_msg[MAX_ERR_MSG] = "";
 	char *f_path = NULL;
 	int fd = -1;
-	int ret = STATUS_OK;
 	enum cmd_node node_idx = 0;
 
 	class = cmd_lookup_tbl[cmd_id].cmd_attrib->class;
 	node_idx = cmd_lookup_tbl[cmd_id].cmd_node;
-	device_node_len = sizeof(device_node);
 	if (mode != CMD_MODE_VERIFY) {
-		ret = sys_path_translate(node,
-					 ND_NORMAL_PATH,
-					 resource,
-					 cmd_id,
-					 device_node,
-					 &device_node_len);
-		if (ret <  0)
-			return ret;
+		char *n_path = node_lookup_tbl[node_idx].node_norm_path;
 
+		if (node_idx == ND_SYS)
+			snprintf(device_node,
+				 sizeof(device_node),
+				 "%s.%d/%s%d",
+				 n_path,
+				 node,
+				 DEV_SYS_RESOURCE,
+				 resource);
+		else
+			snprintf(device_node,
+				 sizeof(device_node),
+				 "%s.%d",
+				 n_path,
+				 node);
 		f_path = device_node;
 	}
 	if (f_id != NULL && class == CTRL_CMDS) {
 		f_path = (f_path == NULL) ? dev_node : f_path;
 		fd = open(f_path, O_RDWR);
-		if (fd < 0) {
-			ret = sys_path_translate(node,
-						 ND_BACKUP_PATH,
-						 resource,
-						 cmd_id,
-						 device_node,
-						 &device_node_len);
-			if (ret <  0)
-				return ret;
-
+		if (fd < 0 &&
+		    strlen(node_lookup_tbl[node_idx].node_bckup_path) > 0) {
+			snprintf(device_node,
+				 sizeof(device_node),
+				 "%s.%d",
+				 node_lookup_tbl[node_idx].node_bckup_path,
+				 node);
 			if (mode != CMD_MODE_VERIFY) {
 				fd = open(device_node, O_RDWR);
 				if (fd < 0) {
@@ -449,9 +381,8 @@ static int cmd_node_lookup(int node,
 		FPR_FN("Open %s\n", device_node);
 	}
 	if (mode != CMD_MODE_VERIFY) {
-		strncpy(dev_node, device_node, device_node_len);
-		dev_node[device_node_len - 1] = '\0';
-		*dev_node_size = device_node_len;
+		strncpy(dev_node, device_node, MAX_SYS_PATH);
+		dev_node[MAX_SYS_PATH - 1] = '\0';
 	}
 	return STATUS_OK;
 }
@@ -499,7 +430,7 @@ static int is_valid_cmd(int cmd_cnt,
 		return STATUS_OK;
 	}
 	if (strcmp(str, "--version") == 0) {
-		*node = ND_VER;
+		*node = ND_LAST;
 		return STATUS_OK;
 	}
 	if (scmd_cnt > MAX_SUB_CMDS) {
@@ -843,32 +774,22 @@ static int cmd_res(int fd,
 	struct vk_reset reset;
 
 	/* if not forced, check for boot status */
-	if (strcmp(cmd_param_tbl[ARG_PARAM1],
-		   attr_lookup_tbl[CMD_RESET].scmds[0])) {
-		int device_node_len = 0;
+	if (strcmp(cmd_param_tbl[ARG_PARAM1], attr_lookup_tbl[CMD_RESET].scmds[0])) {
 		char pcie_res[MAX_SYS_PATH];
 		int val;
 		int scmd[SC_MAX];
 
 		/* reset not allowed if UCODE is not even running */
 		val = atoi(strstr(path, ".") + 1);
-		device_node_len = sizeof(pcie_res);
-		ret = sys_path_translate(val,
-					 ND_NORMAL_PATH,
-					 BOOT_STATUS_BAR_NUM,
-					 CMD_READ_BIN,
-					 pcie_res,
-					 &device_node_len);
-		if (ret <  0) {
+		ret = cmd_node_lookup(val, BOOT_STATUS_BAR_NUM, CMD_MODE_EXEC,
+				      CMD_READ_BIN, pcie_res,
+				      NULL);
+		if (ret) {
 			PERROR("Fail to get PCIe info: %s\n", path);
 			return -EINVAL;
 		}
 		scmd[SC_OFFSET] = BOOT_STATUS_REG;
-		val = cmd_io(0,
-			     CMD_READ_BIN,
-			     scmd,
-			     2 /* 2 param */,
-			     pcie_res);
+		val = cmd_io(0, CMD_READ_BIN, scmd, 2 /* 2 param */, pcie_res);
 		if (val || (scmd[SC_VAL] == BOOT_STATUS_UCODE_NOT_RUN)) {
 			PERROR("Reset skipped - UCODE not running(0x%x)\n",
 			       scmd[SC_VAL]);
@@ -1257,25 +1178,18 @@ static int handle_cmd_apply(enum cmd_node node,
 			    enum cmd_list cmd_idx,
 			    int *scmd_idx,
 			    int scmd_cnt,
-			    char path[MAX_SYS_PATH])
+			    char *path)
 {
 	char e_msg[MAX_ERR_MSG] = "";
 	int fd = -1;
-	int path_len;
 	int lret;
 	int ret = STATUS_OK;
 
-	if (!path)
-		return -EINVAL;
-
-	path_len = MAX_SYS_PATH;
 	lret = cmd_node_lookup(node,
 			       resource,
 			       CMD_MODE_EXEC,
 			       cmd_idx,
-			       path,
-			       &path_len,
-			       &fd);
+			       path, &fd);
 	S_LERR(ret, lret);
 	if (ret < 0) {
 		PERROR("error in node access %s; err=0x%x",
@@ -1316,7 +1230,6 @@ static int  cmd_handler(int cmd_cnt,
 	enum cmd_list cmd_idx = 0;
 	int data[MAX_SUB_CMDS];
 	char device_path[MAX_SYS_PATH] = "";
-	int dev_path_len;
 	char e_msg[MAX_ERR_MSG] = "";
 	enum cmd_node n_id;
 	int ret = STATUS_OK;
@@ -1359,13 +1272,11 @@ static int  cmd_handler(int cmd_cnt,
 	}
 	bar = (cmdc & (IO_AXS_CMDS | FIO_AXS_CMDS)) ?
 	       data[SC_BAR] * 2 : 0;
-	dev_path_len = sizeof(device_path);
 	ret = cmd_node_lookup(fnode,
 			      bar,
 			      CMD_MODE_VERIFY,
 			      cmd_idx,
 			      device_path,
-			      &dev_path_len,
 			      NULL);
 	if (ret < 0) {
 		PERROR("bad node; %d %s err=0x%x",
