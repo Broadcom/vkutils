@@ -4,4 +4,4 @@
 # Used to control semantic versioning of each package
 # This version is passed to libtool also.
 # use up to 3 digits for each numeric value (due to libtool)
-0.2.0
+1.0.0
