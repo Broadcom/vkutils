@@ -25,6 +25,7 @@ while getopts ":h" opt; do
       echo -e ' \t '"sram: to capture only sram region"
       echo -e ' \t '"ddr_dump_addr <addr> size <size>: to capture only specific ddr region"
       echo -e ' \t '"a72_log: to capture only a72 log"
+      echo -e ' \t '"ddr_mve_queue: to capture only ddr_mve_queue dump"
       exit 0
       ;;
    \? )
@@ -65,6 +66,7 @@ dtcm=0
 itcm=0
 sram=0
 a72_log=0
+ddr_mve_queue=0
 if (( $# > 1 )); then
 	shift
 	while [[ $# -gt 0 ]]; do
@@ -104,6 +106,10 @@ if (( $# > 1 )); then
 			dump_all=0
 			a72_log=1
 			;;
+		ddr_mve_queue)
+			dump_all=0
+			ddr_mve_queue=1
+			;;
 		*)
 			echo "Invalid argument: $1"
 			exit 1
@@ -127,6 +133,8 @@ DUMP_SIZE_64MB=0x4000000
 DUMP_SIZE_2GB=0x80000000
 A72_CONSOLE_LOG_SIZE=0x100000
 DDR_START_ADDR=0x60000000
+DDR_MVE_QUEUE_START_ADDR=0x70000000
+DDR_MVE_QUEUE_SIZE=0x8000000
 PCIE_BAR0=0
 PCIE_BAR1=1
 PCIE_BAR2=2
@@ -188,6 +196,7 @@ if (( $dump_all)) || (($a72_log)); then
 	sync;
 fi
 
+#Dump DDR
 if (( $dump_all)) || (($ddr_dump_addr)); then
 	echo "Dumping DDR.."
 	# set the pcie window to default map base 0x60000000
@@ -236,14 +245,31 @@ if (( $dump_all)); then
 	} done
 fi
 
-if (( $ddr_dump_addr )); then
-	#DUMP part of DDR
-	LOOP_START_INDEX=$((($ddr_dump_addr - $DDR_START_ADDR)/$DUMP_SIZE_64MB))
-	window_start_offset=$((($ddr_dump_addr - $DDR_START_ADDR)%$DUMP_SIZE_64MB))
+
+function set_pci_window_to_ddr_base {
+	# set the pcie window to default map base 0x60000000
+	$VKCLI $dev_id wb $PCIE_BAR0 $FW_STATUS_ADDR_OFFSET $CMD_REMAP_TO_DEFAULT
+	check_status "REMAP"
+	result=$(wait_cmd_to_fnish "$VKCLI $dev_id rb $PCIE_BAR0 $FW_STATUS_ADDR_OFFSET")
+	if [[ $result -ne 0 ]]; then
+	        echo "Failed to write cmd sudo $VKCLI $dev_id wb $PCIE_BAR0 $FW_STATUS_ADDR_OFFSET $CMD_REMAP_TO_DEFAULT"
+	        exit 1;
+	fi
+}
+
+function dump_ddr_range {
+	ddr_dump_addr_tmp=$1
+	ddr_dump_size_tmp=$2
+	file_name=$3
+	ddr_dump_from=$DDR_START_ADDR
+	set_pci_window_to_ddr_base
+
+	LOOP_END_INDEX=$((($ddr_dump_addr_tmp - $DDR_START_ADDR)/$DUMP_SIZE_64MB))
+	window_start_offset=$((($ddr_dump_addr_tmp - $DDR_START_ADDR)%$DUMP_SIZE_64MB))
 	window_size=$(($DUMP_SIZE_64MB-$window_start_offset))
 
 	# Move the window to the starting offset
-	for (( i=1; i <= $LOOP_START_INDEX; i++ ))
+	for (( i=1; i <= $LOOP_END_INDEX; i++ ))
 	do {
 		# Request card to remap the pcie BAR2 to the next 64MB
 		ddr_dump_from=$((ddr_dump_from+$DUMP_SIZE_64MB))
@@ -257,11 +283,11 @@ if (( $ddr_dump_addr )); then
 		        exit 1;
 		fi
 	} done
-	ddr_dump_from=$ddr_dump_addr
+	ddr_dump_from=$ddr_dump_addr_tmp
 	while true;
 	do
-		if (($ddr_dump_size < $window_size)); then
-			size=$ddr_dump_size;
+		if (($ddr_dump_size_tmp < $window_size)); then
+			size=$ddr_dump_size_tmp;
 		else
 			size=$window_size
 		fi
@@ -272,11 +298,11 @@ if (( $ddr_dump_addr )); then
 		check_status "DDR DUMP"
 		window_size=$DUMP_SIZE_64MB;
 		window_start_offset=0;
-		ddr_dump_size=$(($ddr_dump_size-$size));
+		ddr_dump_size_tmp=$(($ddr_dump_size_tmp-$size));
 		sync;
-		cat ddr_dump_t.bin >> ddr_dump_$DATE.bin
+		cat ddr_dump_t.bin >> ${file_name}_${FE}.bin
 		ddr_dump_from=$((ddr_dump_from+$size))
-		if (( $ddr_dump_size == 0)); then
+		if (( $ddr_dump_size_tmp == 0)); then
 			echo "---------------------------------"
 			break;
 		fi
@@ -291,9 +317,20 @@ if (( $ddr_dump_addr )); then
 		        exit 1;
 		fi
 	done
+	rm -rf ddr_dump_t.bin
+	sync
+}
+
+if (( $ddr_dump_addr )); then
+	echo "Dumping DDR range from $ddr_dump_addr and size $ddr_dump_size"
+	#dump_ddr_range $ddr_dump_addr $ddr_dump_size ddr_dump_${ddr_dump_addr}_${ddr_dump_size}
+	dump_ddr_range $ddr_dump_addr $ddr_dump_size ddr_dump_`printf '%x' ${ddr_dump_addr}`_`printf '%x' $((${ddr_dump_addr}+${ddr_dump_size}-1))`
 fi
 
-rm -rf ddr_dump_t.bin
-sync
+if (( $dump_all)) || (($ddr_mve_queue)); then
+	echo "Dumping ddr mve queue from offset $DDR_MVE_QUEUE_START_ADDR and size $DDR_MVE_QUEUE_SIZE"
+	dump_ddr_range $DDR_MVE_QUEUE_START_ADDR $DDR_MVE_QUEUE_SIZE ddr_mve_queue_dump
+fi
+
 echo "RAMDUMP DONE"
 echo "To reset the card execute: ${VKCLI} <dev_num> reset"
