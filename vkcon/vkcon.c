@@ -162,11 +162,12 @@ int main(int argc, char **argv)
 				output_enable = true;
 			break;
 		case 'v':
-			_PR_LINE("%s version %s.%s.%s\n",
+			_PR_LINE("%s version %s.%s.%s+%s\n",
 				 argv[0],
 				 PKG_VERSION_MAJOR,
 				 PKG_VERSION_MINOR,
-				 PKG_VERSION_PATCH);
+				 PKG_VERSION_PATCH,
+				 PKG_VERSION_META);
 			/*
 			 * version query cannot be combined
 			 * with other commands. Exit after reporting

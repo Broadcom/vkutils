@@ -842,11 +842,12 @@ static int cmd_ver(int fd,
 		   int scmd_cnt,
 		   char *path)
 {
-	FPR_FN("%s version %s.%s.%s\n",
+	FPR_FN("%s version %s.%s.%s+%s\n",
 	       cmd_param_tbl[ARG_SELF],
 	       PKG_VERSION_MAJOR,
 	       PKG_VERSION_MINOR,
-	       PKG_VERSION_PATCH);
+	       PKG_VERSION_PATCH,
+	       PKG_VERSION_META);
 
 	return STATUS_OK;
 }

@@ -24,3 +24,4 @@ m4_define([n4_define_substrings_as],
             [m4_for([_idx_], [4], [$#], [1],
                 [m4_ifnblank(m4_quote(m4_argn(_idx_, $@)),
                     [[m4_define(m4_normalize(m4_argn(]_idx_[, $@)), m4_quote(\]m4_eval(_idx_[ - 3])[))]])])]))])
+m4_define(n4_define_git_hash, m4_esyscmd_s([[ -d .git ]] && [git describe --abbrev=7 --always --tags]))

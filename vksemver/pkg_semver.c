@@ -8,7 +8,7 @@
 __attribute__ ((__used__, __section__(".verinfo")))
 char verinfo_strings[] =
 "name=" PACKAGE_NAME "\0"
-"version=" PKG_VERSION_MAJOR "." PKG_VERSION_MINOR "." PKG_VERSION_PATCH "\0";
+"version=" PKG_VERSION_MAJOR "." PKG_VERSION_MINOR "." PKG_VERSION_PATCH "+" PKG_VERSION_META "\0";
 
 __attribute__ ((__used__, __section__(".gnu.linkonce.this_module")))
 struct module {
