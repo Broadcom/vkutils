@@ -19,13 +19,14 @@ while getopts ":h" opt; do
 	 "    ramdump <dev_num> [full] [ddr_dump_addr <addr> size <size>] [dtcm] [itcm] [sram] [a72_log]"
       /
       echo -e ' \n\t '"dev_num: 0..11 - corresponds to /dev/bcm-vk.X; w/o dev_num = 0"
-      echo -e ' \t '"full: to capture full 2GB RAM image; w/o limit to first 64MB"
+      echo -e ' \t '"full: to capture full 2.5GB RAM image; w/o limit to first 64MB"
       echo -e ' \t '"dtcm: to capture only dtcm region"
       echo -e ' \t '"itcm: to capture only itcm region"
       echo -e ' \t '"sram: to capture only sram region"
       echo -e ' \t '"ddr_dump_addr <addr> size <size>: to capture only specific ddr region"
       echo -e ' \t '"a72_log: to capture only a72 log"
       echo -e ' \t '"ddr_mve_queue: to capture only ddr_mve_queue dump"
+      echo -e ' \t '"a72_linux_full: to capture full a72/linux memory dump"
       exit 0
       ;;
    \? )
@@ -67,6 +68,7 @@ itcm=0
 sram=0
 a72_log=0
 ddr_mve_queue=0
+a72_linux_full=0
 if (( $# > 1 )); then
 	shift
 	while [[ $# -gt 0 ]]; do
@@ -110,6 +112,10 @@ if (( $# > 1 )); then
 			dump_all=0
 			ddr_mve_queue=1
 			;;
+		a72_linux_full)
+			dump_all=0
+			a72_linux_full=1
+			;;
 		*)
 			echo "Invalid argument: $1"
 			exit 1
@@ -135,6 +141,8 @@ A72_CONSOLE_LOG_SIZE=0x100000
 DDR_START_ADDR=0x60000000
 DDR_MVE_QUEUE_START_ADDR=0x70000000
 DDR_MVE_QUEUE_SIZE=0x8000000
+A72_LINUX_START_ADDR=0x560000000
+A72_LINUX_SIZE=0x1fc00000
 PCIE_BAR0=0
 PCIE_BAR1=1
 PCIE_BAR2=2
@@ -330,6 +338,11 @@ fi
 if (( $dump_all)) || (($ddr_mve_queue)); then
 	echo "Dumping ddr mve queue from offset $DDR_MVE_QUEUE_START_ADDR and size $DDR_MVE_QUEUE_SIZE"
 	dump_ddr_range $DDR_MVE_QUEUE_START_ADDR $DDR_MVE_QUEUE_SIZE ddr_mve_queue_dump
+fi
+
+if  (($ddr_full)) || (($a72_linux_full)); then
+	echo "Dumping Linux memory dump from offset $A72_LINUX_START_ADDR and size $A72_LINUX_SIZE"
+	dump_ddr_range $A72_LINUX_START_ADDR $A72_LINUX_SIZE a72_linux_dump_full
 fi
 
 echo "RAMDUMP DONE"
