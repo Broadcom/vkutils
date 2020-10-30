@@ -1,3 +1,0 @@
-[submodule "spsparser/spsparser/h264bitstream"]
-	path = spsparser/spsparser/h264bitstream
-	url = https://github.com/aizvorski/h264bitstream.git
