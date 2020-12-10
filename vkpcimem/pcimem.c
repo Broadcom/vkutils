@@ -17,6 +17,7 @@
 #include <fcntl.h>
 #include <inttypes.h>
 #include <limits.h>
+#include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -41,23 +42,28 @@ struct map_list {
 	struct map_list *next;
 };
 
-/* local macros */
-#define PRINT_ERROR(d_id) \
-	do { \
-		if (!(d_id)) { \
-			exit(-1); \
-		} else { \
-			fprintf(stderr, \
-				"Id %04d:%02d\tErr@L: %d, F: %s (%d) [%s]\n", \
-				(d_id)->nd, \
-				(d_id)->bar, \
-				__LINE__, \
-				__FILE__, \
-				errno, \
-				strerror(errno)); \
-			exit(1); \
-		} \
-	} while(0)
+static inline void pr_err(const struct id_info *p_id, int lineno,
+			  const char *func, int err, const char *fmt, ...)
+{
+	va_list vl;
+
+	fprintf(stderr,
+		"Id %04d:%02d\tErr@L: %d, F: %s (%d) [%s] ",
+		(p_id) ? p_id->nd : -1,
+		(p_id) ? p_id->bar : -1, lineno, func,
+		-err, strerror(err));
+	va_start(vl, fmt);
+	vfprintf(stderr, fmt, vl);
+	va_end(vl);
+	fprintf(stderr, "\n");
+	fflush(stderr);
+
+	/* any error, exit after logging */
+	exit(-1);
+}
+
+#define PRINT_ERROR(p_id, fmt, ...) \
+	pr_err(p_id, __LINE__, __func__, errno, fmt, ##__VA_ARGS__)
 
 #if defined(MMAP_DEBUG)
 #define FPR_FN(...) \
@@ -118,18 +124,18 @@ static int get_Id(char * const dev_name, struct map_info *p_info)
 	/* get node info */
 	len = strlen(dev_name);
 	if (len <= 3) {
-		PRINT_ERROR(p_did);
+		PRINT_ERROR(p_did, "Node len too short");
 		return -EINVAL;
 	}
 	num = strstr(dev_name, ".");
 	if (!num) {
-		PRINT_ERROR(p_did);
+		PRINT_ERROR(p_did, "Dev missing dot separate");
 		return -EINVAL;
 	}
 	num++;
 	ret = str2ul(num, &val);
 	if (ret < 0) {
-		PRINT_ERROR(p_did);
+		PRINT_ERROR(p_did, "str2ul conversion failure");
 		return -EINVAL;
 	}
 	p_info->d_id.nd = val;
@@ -141,7 +147,7 @@ static int get_Id(char * const dev_name, struct map_info *p_info)
 		num--;
 	ret = str2ul(num + 1, &val);
 	if (ret < 0) {
-		PRINT_ERROR(p_did);
+		PRINT_ERROR(p_did, "Get BAR num failure");
 		return -EINVAL;
 	}
 	p_info->d_id.bar = val;
@@ -242,8 +248,8 @@ static int ins_elem_map_list(struct map_list *p_map_node)
 	p_did = &p_map_node->d_id;
 	p_new_elem = (struct map_list *)malloc(sizeof(*p_new_elem));
 	if (!p_new_elem) {
-		PRINT_ERROR(p_did);
-		return -EINVAL;
+		PRINT_ERROR(p_did, "map_list alloc failure");
+		return -ENOMEM;
 	}
 	memcpy(p_new_elem, p_map_node, sizeof(*p_new_elem));
 	p_new_elem->next = NULL;
@@ -303,7 +309,7 @@ int pcimem_init(char * const device_name, struct map_info *p_info)
 	p_did = &p_info->d_id;
 	ret = get_Id(device_name, p_info);
 	if (ret < 0) {
-		PRINT_ERROR(p_did);
+		PRINT_ERROR(p_did, "Get Id failure");
 		return ret;
 	}
 	/* bypass opening the device if already open */
@@ -313,7 +319,7 @@ int pcimem_init(char * const device_name, struct map_info *p_info)
 	} else {
 		ret = open(device_name, O_RDWR | O_SYNC);
 		if (ret < 0) {
-			PRINT_ERROR(p_did);
+			PRINT_ERROR(p_did, "Open dev %s failure", device_name);
 			return -errno;
 		}
 		FPR_FN("%s opened.\nPage size is %ld\n",
@@ -371,7 +377,7 @@ int pcimem_map_base(struct map_info *p_info,
 				p_info->fd,
 				base_offset);
 	if (p_info->map_base == (void *) -1) {
-		PRINT_ERROR(p_did);
+		PRINT_ERROR(p_did, "Mmap failure - size 0x%lx", target_size);
 		return -EINVAL;
 	}
 	elem_list.d_id = p_info->d_id;
@@ -411,7 +417,8 @@ int pcimem_read(struct map_info const *p_info,
 	p_did = &p_info->d_id;
 	res = find_mapping(p_info, offset, d_size, &p_elem);
 	if (res < 0) {
-		PRINT_ERROR(p_did);
+		PRINT_ERROR(p_did, "Find mapping failure size 0x%x offset 0x%lx",
+			    d_size, offset);
 		return -EINVAL;
 	}
 	if (p_elem) {
@@ -430,7 +437,8 @@ int pcimem_read(struct map_info const *p_info,
 			*(uint64_t *)p_data = *((uint64_t *)virt_addr);
 			break;
 		default:
-			PRINT_ERROR(p_did);
+			PRINT_ERROR(p_did, "type width %d unsupported",
+				    type_width);
 			return -EINVAL;
 		}
 	}
@@ -457,7 +465,6 @@ int pcimem_write(struct map_info const *p_info,
 	struct id_info const *p_did;
 	struct map_list *p_elem;
 	int res;
-	uint64_t read_result = -1;
 	void *virt_addr;
 
 	if (!p_info || !p_data)
@@ -466,7 +473,8 @@ int pcimem_write(struct map_info const *p_info,
 	p_did = &p_info->d_id;
 	res = find_mapping(p_info, offset, d_size, &p_elem);
 	if (res < 0) {
-		PRINT_ERROR(p_did);
+		PRINT_ERROR(p_did, "Find mapping failure size 0x%x offset 0x%lx",
+			    d_size, offset);
 		return -EINVAL;
 	}
 	if (p_elem) {
@@ -474,26 +482,19 @@ int pcimem_write(struct map_info const *p_info,
 		switch (type_width) {
 		case ALIGN_8_BIT:
 			*((uint8_t *)virt_addr) = *(uint8_t *)p_data;
-			read_result = *((uint8_t *)virt_addr);
 			break;
 		case ALIGN_16_BIT:
 			*((uint16_t *)virt_addr) = *(uint16_t *)p_data;
-			read_result = *((uint16_t *)virt_addr);
 			break;
 		case ALIGN_32_BIT:
 			*((uint32_t *)virt_addr) = *(uint32_t *)p_data;
-			read_result = *((uint32_t *)virt_addr);
 			break;
 		case ALIGN_64_BIT:
 			*((uint64_t *)virt_addr) = *(uint64_t *)p_data;
-			read_result = *((uint64_t *)virt_addr);
 			break;
 		default:
-			PRINT_ERROR(p_did);
-			return -EINVAL;
-		}
-		if (read_result != *(uint64_t *)p_data) {
-			PRINT_ERROR(p_did);
+			PRINT_ERROR(p_did, "type_width %d unsupported",
+				    type_width);
 			return -EINVAL;
 		}
 	}
@@ -529,7 +530,8 @@ int pcimem_blk_read(struct map_info const *p_info,
 	p_did = &p_info->d_id;
 	res = find_mapping(p_info, offset, d_size, &p_elem);
 	if (res < 0) {
-		PRINT_ERROR(p_did);
+		PRINT_ERROR(p_did, "Find mapping failure size 0x%x offset 0x%lx",
+			    d_size, offset);
 		return -EINVAL;
 	}
 	if (p_elem) {
@@ -569,16 +571,13 @@ int pcimem_blk_write(struct map_info const *p_info,
 	p_did = &p_info->d_id;
 	res = find_mapping(p_info, offset, d_size, &p_elem);
 	if (res < 0) {
-		PRINT_ERROR(p_did);
+		PRINT_ERROR(p_did, "Find mapping failure size 0x%x offset 0x%lx",
+			    d_size, offset);
 		return -EINVAL;
 	}
 	if (p_elem) {
 		virt_addr = p_elem->p_mapping + offset - p_elem->base;
 		memcpy(virt_addr, p_data, d_size);
-		if (memcmp(p_data, virt_addr, d_size) != 0) {
-			PRINT_ERROR(p_did);
-			return -EINVAL;
-		}
 	}
 	return STATUS_OK;
 }
@@ -606,7 +605,9 @@ int pcimem_deinit(struct map_info *p_info)
 	if (p_info->map_size >= 0) {
 		ret = munmap(p_info->map_base, p_info->map_size);
 		if (ret < 0) {
-			PRINT_ERROR(p_did);
+			PRINT_ERROR(p_did,
+				    "Failure to unmap base %p size 0x%lx",
+				    p_info->map_base, p_info->map_size);
 			return -errno;
 		}
 	}
