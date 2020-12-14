@@ -140,6 +140,14 @@ int main(int argc, char **argv)
 		{0, 0, 0, 0}
 	};
 
+	/*
+	 * Force stdout to be line buffered.
+	 * If this isn't done explicitly then when vkcon's output is directed to
+	 * a pipe or file stdout defaults to fully buffered. This is undesirable
+	 * as it introduces arbitrary latency.
+	 */
+	setvbuf(stdout, NULL, _IOLBF, 0);
+
 	memset(dev_name, 0, sizeof(dev_name));
 
 	while ((c = getopt_long(argc, argv, "d:i:o:s:v:",
