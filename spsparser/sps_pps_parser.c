@@ -9,7 +9,7 @@
 #define _GNU_SOURCE
 #include <stdio.h>
 #include <errno.h>
-#include "h264_stream.h"
+#include "h264bitstream/h264_stream.h"
 
 #define MIN(x, y) \
 ({ typeof(X) x_ = (X); \
