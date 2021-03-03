@@ -1,0 +1,11 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/*
+ * Copyright 2020 Broadcom
+ *
+ * WARNING: auto-generated file - do not edit or modify
+ *
+ */
+#define PKG_VERSION_MAJOR  "@BRCM_VER_MAJOR@"
+#define PKG_VERSION_MINOR  "@BRCM_VER_MINOR@"
+#define PKG_VERSION_PATCH  "@BRCM_VER_PATCH@"
+#define PKG_VERSION_META   "@BRCM_VER_META@"

@@ -1,0 +1,14 @@
+prefix=@prefix@
+exec_prefix=@prefix@
+bindir=@bindir@
+libdir=@libdir@
+includedir=@prefix@/include
+
+Name: @PACKAGE_NAME@
+Description: command line utilities for video accelerator cards
+URL:
+Version: @PACKAGE_VERSION@
+
+Requires:
+Libs: -L${libdir} -lpcimem
+Cflags: -I${includedir}

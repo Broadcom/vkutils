@@ -1,0 +1,13 @@
+prefix=@prefix@
+exec_prefix=@prefix@
+libdir=@libdir@
+includedir=@prefix@/include
+
+Name: @PACKAGE_NAME@
+Description: simple library facilitating read/write from user space
+URL:
+Version: @PACKAGE_VERSION@
+
+Requires:
+Libs: -L${libdir}
+Cflags: -I${includedir}
