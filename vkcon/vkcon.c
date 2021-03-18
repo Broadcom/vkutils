@@ -203,7 +203,7 @@ int main(int argc, char **argv)
 				 &mmapped_size);
 	if (ret < 0) {
 		_PR_LINE("Fail to open communication channel - %s(%d)\n",
-			 strerror(-errno), errno);
+			 strerror(-ret), ret);
 		return -EINVAL;
 	}
 

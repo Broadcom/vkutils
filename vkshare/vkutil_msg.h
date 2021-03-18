@@ -48,21 +48,35 @@ typedef struct _console_buf {
 #define FNAME_LEN		256
 #define MAX_ERR_MSG		512
 
-#define PERROR(...) do { \
-			snprintf(e_msg, \
-				 MAX_ERR_MSG, \
-				 __VA_ARGS__);\
-			fprintf(stderr, \
-				" @L:%d %s\n", \
-				__LINE__, \
-				e_msg);\
-			fflush(stderr);\
-			} while (0)
+#define FPRINTF_IO(io, ...) do {			\
+	int ret; \
+	ret = fprintf(io, __VA_ARGS__); \
+	if (ret < 0) \
+		exit(EIO); \
+} while (0)
 
-#define FPR_FN(...)             do { \
-					fprintf(stdout, __VA_ARGS__); \
-					fflush(stdout); \
-				} while (0)
+#define FLUSH_IO(io) do { \
+	int ret; \
+	ret = fflush(io); \
+	if (ret) \
+		FPRINTF_IO(io, "Flush failure %d, errnor(%d)\n", ret, errno); \
+} while (0)
+
+#define PERROR(...) do { \
+	int ret; \
+	char e_msg[MAX_ERR_MSG]; \
+	e_msg[0] = '\0'; \
+	ret = snprintf(e_msg, MAX_ERR_MSG, __VA_ARGS__); \
+	if ((ret >= sizeof(e_msg)) || (ret < 0)) \
+		FPRINTF_IO(stderr, "Msg print returns error %d\n", ret); \
+	FPRINTF_IO(stderr, " @L:%d %s\n", __LINE__, e_msg); \
+	FLUSH_IO(stderr); \
+} while (0)
+
+#define FPR_FN(...) do { \
+	FPRINTF_IO(stdout, __VA_ARGS__); \
+	FLUSH_IO(stdout); \
+} while (0)
 
 #define _PR_F printf
 
