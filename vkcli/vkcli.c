@@ -287,6 +287,7 @@ static bool matched_attrib_scmds(const struct cmd_attributes *attrib,
  */
 static int find_size(char *f_name, unsigned int *size)
 {
+	char e_msg[MAX_ERR_MSG] = "";
 	FILE *fp = NULL;
 	int lret;
 	int ret = STATUS_OK;
@@ -336,6 +337,7 @@ static int cmd_sysfs_open(const struct node_path *path,
 			  char dev_node[MAX_SYS_PATH])
 {
 	int i;
+	char e_msg[MAX_ERR_MSG] = "";
 	int fd;
 	int ret;
 
@@ -382,6 +384,7 @@ static int is_valid_cmd(int argc,
 			const struct cmd_def **entry,
 			int *node_id)
 {
+	char e_msg[MAX_ERR_MSG] = "";
 	int i;
 	char node_str[128]; /* just make it long enough */
 	char limits[] = " .";
@@ -495,6 +498,7 @@ static int is_valid_cmd(int argc,
 static int cmd_li(const struct cmd_def *cmd, int argc, char *argv[],
 		  const int node_id)
 {
+	char e_msg[MAX_ERR_MSG] = "";
 	int arg_idx, start_idx, end_idx;
 	int li_type, size;
 	int ret;
@@ -613,6 +617,7 @@ static int cmd_li(const struct cmd_def *cmd, int argc, char *argv[],
 static int cmd_reset(const struct cmd_def *cmd, int argc, char *argv[],
 		     const int node_id)
 {
+	char e_msg[MAX_ERR_MSG] = "";
 	int ret;
 	int fd;
 	struct vk_reset reset;
@@ -723,6 +728,7 @@ static int cmd_ver(const struct cmd_def *cmd, int argc, char *argv[],
 static int bar_common_decode(char *argv[],
 			     int *bar, int *offset)
 {
+	char e_msg[MAX_ERR_MSG] = "";
 	int ret;
 
 	ret = string2l(argv[ARG_SC_BAR], bar);
@@ -759,6 +765,7 @@ static int bar_access_init(struct map_info *map,
 			   const int len,
 			   const int align)
 {
+	char e_msg[MAX_ERR_MSG] = "";
 	int ret;
 	char dev_node[MAX_SYS_PATH] = "";
 	int fd;
@@ -807,6 +814,7 @@ static int bar_rw_access_internal(const int node_id, const int bar,
 				  const int offset, void *data, const int len,
 				  const char *cmdname, const bool is_read)
 {
+	char e_msg[MAX_ERR_MSG] = "";
 	int ret, lret;
 	int align = ALIGN_32_BIT;
 	struct map_info lmap_info;
@@ -909,6 +917,7 @@ static int cmd_wb(const struct cmd_def *cmd, int argc, char *argv[],
 static int cmd_rf(const struct cmd_def *cmd, int argc, char *argv[],
 		  const int node_id)
 {
+	char e_msg[MAX_ERR_MSG] = "";
 	int bar, offset;
 	int len;
 	int *io_data;
@@ -970,6 +979,7 @@ err:
 static int cmd_wf(const struct cmd_def *cmd, int argc, char *argv[],
 		  const int node_id)
 {
+	char e_msg[MAX_ERR_MSG] = "";
 	int bar, offset;
 	int len;
 	int *io_data;
@@ -1030,6 +1040,7 @@ err:
  */
 int main(int argc, char *argv[])
 {
+	char e_msg[MAX_ERR_MSG] = "";
 	int ret;
 	const struct cmd_def *cmd;
 	int node_id;

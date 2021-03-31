@@ -29,6 +29,7 @@
 
 static int parse_console_log(char *f_name)
 {
+	char e_msg[MAX_ERR_MSG] = "";
 	FILE *fp;
 	int ret;
 	long rd_idx;
@@ -107,6 +108,7 @@ fail:
 
 static int parse_logger(char *f_name)
 {
+	char e_msg[MAX_ERR_MSG] = "";
 	FILE *fp;
 	long offset = VCON_BUF_BAR2_OFF;
 	logger_buf log;
@@ -195,6 +197,7 @@ static void usage(char *name)
 
 int main(int argc, char **argv)
 {
+	char e_msg[MAX_ERR_MSG] = "";
 	char f_name[FNAME_LEN] = { 0 };
 	char c;
 	int option_index;

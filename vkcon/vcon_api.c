@@ -119,6 +119,7 @@ static int string2ul(char *str, unsigned long *return_value)
 int vcon_get_cmd_output(void *ctx, char *buf, const size_t buf_size)
 {
 	int cnt;
+	char e_msg[MAX_ERR_MSG] = "";
 	uint32_t entry_len;
 	uint32_t nentries;
 	char *p_buf = buf;
@@ -189,6 +190,7 @@ int vcon_send_cmd(void *ctx, const char *cmd)
 	char *cmd_chan;
 	uint32_t cnt = 0;
 	static uint32_t data = VCON_CMD_DB_VAL;
+	char e_msg[MAX_ERR_MSG] = "";
 	int len = 0;
 	con_ctx *p_ctx;
 	logger_buf *p_log_buf;
@@ -262,6 +264,7 @@ static int vcon_mem_map_node(dev_ctx **ctx,
 			     uint32_t size)
 {
 	char devnode[FNAME_LEN];
+	char e_msg[MAX_ERR_MSG] = "";
 	unsigned long fnode = 0;
 	dev_ctx *p_dev;
 	char *node_num = NULL;
@@ -346,6 +349,7 @@ int vcon_open_cmd_chan(void **ctx,
 	int bar;
 	off_t bar0_off;
 	off_t bar2_off;
+	char e_msg[MAX_ERR_MSG] = "";
 	con_ctx *p_ctx;
 	dev_ctx *p_dev;
 	logger_buf *p_log_buf;
@@ -372,16 +376,18 @@ int vcon_open_cmd_chan(void **ctx,
 				bar,
 				bar0_off,
 				PAGE_MMAP_SIZE);
-	p_ctx->p_cmd = p_dev;
 	if (ret < 0) {
 		PERROR("failed to open cmd channel\n");
-		goto fail_open;
+		if (p_dev)
+			free(p_dev);
+		vcon_close_cmd_chan(p_ctx);
+		return ret;
 	}
+	p_ctx->p_cmd = p_dev;
 
 	if (!p_dev) {
 		PERROR("fail to map node %s\n", dev_name);
-		ret = -EINVAL;
-		goto fail_open;
+		return -EINVAL;
 	}
 	/* read boot-status */
 	ret = pcimem_blk_read(p_dev->m_info,
@@ -390,10 +396,11 @@ int vcon_open_cmd_chan(void **ctx,
 			      &boot_status,
 			      ALIGN_32_BIT);
 	if ((ret < 0) || (boot_status != VCON_BOOT2_RUNNING)) {
-		PERROR("Card not in proper status 0x%x - (%d)\n",
+		PERROR("Card not in proper status 0x%x - ret(%d)\n",
 		       boot_status, ret);
-		ret = -EINVAL;
-		goto fail_open;
+		free(p_dev);
+		vcon_close_cmd_chan(p_ctx);
+		return -EINVAL;
 	}
 
 	/* read firmware-status */
@@ -403,10 +410,11 @@ int vcon_open_cmd_chan(void **ctx,
 			      &fw_status,
 			      ALIGN_32_BIT);
 	if ((ret < 0) || !VCON_FW_STATUS_OK(fw_status)) {
-		PERROR("FW status 0x%x not ready, exp[0x%x] - (%d)\n",
+		PERROR("FW status 0x%x not ready, exp[0x%x] - ret(%d)\n",
 		       fw_status, VCON_FW_STATUS_ALL_RDY, ret);
-		ret = -EINVAL;
-		goto fail_open;
+		free(p_dev);
+		vcon_close_cmd_chan(p_ctx);
+		return -EINVAL;
 	}
 
 	bar = 2;
@@ -417,16 +425,18 @@ int vcon_open_cmd_chan(void **ctx,
 				bar,
 				bar2_off,
 				VCON_DEF_MMAP_SIZE);
-	p_ctx->con.p_dev = p_dev;
 	if (ret < 0) {
 		PERROR("failed to open channel\n");
-		goto fail_open;
+		if (p_dev)
+			free(p_dev);
+		vcon_close_cmd_chan(p_ctx);
+		return ret;
 	}
+	p_ctx->con.p_dev = p_dev;
 
 	if (!p_dev) {
 		PERROR("fail to map node %s\n", dev_name);
-		ret = -EINVAL;
-		goto fail_open;
+		return -EINVAL;
 	}
 	/* do mmap & map it to our struct */
 	p_log_buf = p_dev->m_info->map_base;
@@ -434,8 +444,10 @@ int vcon_open_cmd_chan(void **ctx,
 
 	if (!p_log_buf || p_log_buf->marker != VCON_MARKER) {
 		PERROR("failed to find marker\n");
+		if (p_dev)
+			free(p_dev);
+		vcon_close_cmd_chan(p_ctx);
 		ret = -EACCES;
-		goto fail_open;
 	}
 	/*
 	 * Do some calculation and see if
@@ -450,45 +462,27 @@ int vcon_open_cmd_chan(void **ctx,
 					bar,
 					bar2_off,
 					new_size);
-		p_ctx->con.p_dev = p_dev;
 		if (ret < 0) {
 			PERROR("failed to open channel\n");
-			goto fail_open;
+			if (p_dev)
+				free(p_dev);
+			vcon_close_cmd_chan(p_ctx);
+			return ret;
 		}
+		p_ctx->con.p_dev = p_dev;
 		p_log_buf = p_dev->m_info->map_base;
 		p_ctx->con.p_log_buf = p_log_buf;
 	}
 	if (!p_log_buf || p_log_buf->marker != VCON_MARKER) {
 		PERROR("failed to find marker\n");
+		vcon_close_cmd_chan(p_ctx);
 		ret = -EACCES;
-		goto fail_open;
 	}
 	p_ctx->con.p_dev = p_dev;
 	p_ctx->con.p_log_buf = p_log_buf;
 	p_ctx->con.rd_idx = p_log_buf->spool_idx;
 	*mmap_size = p_ctx->con.p_dev->m_info->map_size;
 	return ret;
-
-fail_open:
-	vcon_close_cmd_chan(p_ctx);
-	return ret;
-}
-
-/* static local helper to deinit PCIe */
-static void dev_ctx_deinit(dev_ctx *p_dev)
-{
-	int ret;
-
-	if (p_dev) {
-		if (p_dev->m_info) {
-			p_dev->m_info->fd = p_dev->fd;
-			ret = pcimem_deinit(p_dev->m_info);
-			if (ret != STATUS_OK)
-				PERROR("failed to deinit m_info\n");
-			free(p_dev->m_info);
-		}
-		free(p_dev);
-	}
 }
 
 /**
@@ -500,13 +494,25 @@ int vcon_close_cmd_chan(void *ctx)
 {
 	con_ctx *p_ctx;
 	dev_ctx *p_dev;
+	int ret = STATUS_OK;
 
 	if (!ctx)
 		return -EINVAL;
 	p_ctx = (con_ctx *)ctx;
-	dev_ctx_deinit(p_ctx->con.p_dev);
-	dev_ctx_deinit(p_ctx->p_cmd);
+	p_dev = p_ctx->con.p_dev;
+	if (p_dev && p_dev->m_info) {
+		p_dev->m_info->fd = p_dev->fd;
+		ret = pcimem_deinit(p_dev->m_info);
+		free(p_dev->m_info);
+		free(p_dev);
+	}
+	p_dev = p_ctx->p_cmd;
+	if (p_dev && p_dev->m_info) {
+		p_dev->m_info->fd = p_dev->fd;
+		ret = pcimem_deinit(p_dev->m_info);
+		free(p_dev->m_info);
+		free(p_dev);
+	}
 	free(p_ctx);
-
-	return STATUS_OK;
+	return ret;
 }
